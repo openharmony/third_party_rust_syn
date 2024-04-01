@@ -6,7 +6,7 @@ use quote::{format_ident, quote};
 use syn::Index;
 use syn_codegen::{Data, Definitions, Features, Node, Type};
 
-const VISIT_MUT_SRC: &str = "../src/gen/visit_mut.rs";
+const VISIT_MUT_SRC: &str = "src/gen/visit_mut.rs";
 
 fn simple_visit(item: &str, name: &Operand) -> TokenStream {
     let ident = gen::under_name(item);
@@ -50,21 +50,18 @@ fn visit(
             let val = visit(&p.element, features, defs, &operand)?;
             let name = name.ref_mut_tokens();
             Some(quote! {
-                for el in Punctuated::pairs_mut(#name) {
-                    let (it, p) = el.into_tuple();
+                for mut el in Punctuated::pairs_mut(#name) {
+                    let it = el.value_mut();
                     #val;
-                    if let Some(p) = p {
-                        tokens_helper(v, &mut p.spans);
-                    }
                 }
             })
         }
         Type::Option(t) => {
             let it = Borrowed(quote!(it));
             let val = visit(t, features, defs, &it)?;
-            let name = name.owned_tokens();
+            let name = name.ref_mut_tokens();
             Some(quote! {
-                if let Some(it) = &mut #name {
+                if let Some(it) = #name {
                     #val;
                 }
             })
@@ -81,25 +78,6 @@ fn visit(
             }
             Some(code)
         }
-        Type::Token(t) => {
-            let name = name.tokens();
-            let repr = &defs.tokens[t];
-            let is_keyword = repr.chars().next().unwrap().is_alphabetic();
-            let spans = if is_keyword {
-                quote!(span)
-            } else {
-                quote!(spans)
-            };
-            Some(quote! {
-                tokens_helper(v, &mut #name.#spans);
-            })
-        }
-        Type::Group(_) => {
-            let name = name.tokens();
-            Some(quote! {
-                tokens_helper(v, &mut #name.span);
-            })
-        }
         Type::Syn(t) => {
             fn requires_full(features: &Features) -> bool {
                 features.any.contains("full") && features.any.len() == 1
@@ -112,7 +90,7 @@ fn visit(
             Some(res)
         }
         Type::Ext(t) if gen::TERMINAL_TYPES.contains(&&t[..]) => Some(simple_visit(t, name)),
-        Type::Ext(_) | Type::Std(_) => None,
+        Type::Ext(_) | Type::Std(_) | Type::Token(_) | Type::Group(_) => None,
     }
 }
 
@@ -124,6 +102,11 @@ fn node(traits: &mut TokenStream, impls: &mut TokenStream, s: &Node, defs: &Defi
     let mut visit_mut_impl = TokenStream::new();
 
     match &s.data {
+        Data::Enum(variants) if variants.is_empty() => {
+            visit_mut_impl.extend(quote! {
+                match *node {}
+            });
+        }
         Data::Enum(variants) => {
             let mut visit_mut_variants = TokenStream::new();
 
@@ -163,33 +146,17 @@ fn node(traits: &mut TokenStream, impls: &mut TokenStream, s: &Node, defs: &Defi
                 }
             }
 
-            let nonexhaustive = if s.exhaustive {
-                None
-            } else {
-                Some(quote! {
-                    #[cfg(syn_no_non_exhaustive)]
-                    _ => unreachable!(),
-                })
-            };
-
             visit_mut_impl.extend(quote! {
                 match node {
                     #visit_mut_variants
-                    #nonexhaustive
                 }
             });
         }
         Data::Struct(fields) => {
             for (field, ty) in fields {
-                if let Type::Syn(ty) = ty {
-                    if ty == "Reserved" {
-                        continue;
-                    }
-                }
-
-                let id = Ident::new(&field, Span::call_site());
+                let id = Ident::new(field, Span::call_site());
                 let ref_toks = Owned(quote!(node.#id));
-                let visit_mut_field = visit(&ty, &s.features, defs, &ref_toks)
+                let visit_mut_field = visit(ty, &s.features, defs, &ref_toks)
                     .unwrap_or_else(|| noop_visit(&ref_toks));
                 visit_mut_impl.extend(quote! {
                     #visit_mut_field;
@@ -230,9 +197,8 @@ pub fn generate(defs: &Definitions) -> Result<()> {
         VISIT_MUT_SRC,
         quote! {
             #![allow(unused_variables)]
+            #![allow(clippy::needless_pass_by_ref_mut)]
 
-            #[cfg(any(feature = "full", feature = "derive"))]
-            use crate::gen::helper::visit_mut::*;
             #[cfg(any(feature = "full", feature = "derive"))]
             use crate::punctuated::Punctuated;
             use crate::*;
@@ -250,8 +216,6 @@ pub fn generate(defs: &Definitions) -> Result<()> {
             /// See the [module documentation] for details.
             ///
             /// [module documentation]: self
-            ///
-            /// *This trait is available only if Syn is built with the `"visit-mut"` feature.*
             pub trait VisitMut {
                 #traits
             }
