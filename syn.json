@@ -1,5 +1,5 @@
 {
-  "version": "2.0.48",
+  "version": "1.0.107",
   "types": [
     {
       "ident": "Abi",
@@ -31,7 +31,7 @@
       "fields": {
         "colon2_token": {
           "option": {
-            "token": "PathSep"
+            "token": "Colon2"
           }
         },
         "lt_token": {
@@ -96,56 +96,6 @@
       }
     },
     {
-      "ident": "AssocConst",
-      "features": {
-        "any": [
-          "derive",
-          "full"
-        ]
-      },
-      "fields": {
-        "ident": {
-          "proc_macro2": "Ident"
-        },
-        "generics": {
-          "option": {
-            "syn": "AngleBracketedGenericArguments"
-          }
-        },
-        "eq_token": {
-          "token": "Eq"
-        },
-        "value": {
-          "syn": "Expr"
-        }
-      }
-    },
-    {
-      "ident": "AssocType",
-      "features": {
-        "any": [
-          "derive",
-          "full"
-        ]
-      },
-      "fields": {
-        "ident": {
-          "proc_macro2": "Ident"
-        },
-        "generics": {
-          "option": {
-            "syn": "AngleBracketedGenericArguments"
-          }
-        },
-        "eq_token": {
-          "token": "Eq"
-        },
-        "ty": {
-          "syn": "Type"
-        }
-      }
-    },
-    {
       "ident": "AttrStyle",
       "features": {
         "any": [
@@ -157,7 +107,7 @@
         "Outer": [],
         "Inner": [
           {
-            "token": "Not"
+            "token": "Bang"
           }
         ]
       }
@@ -180,8 +130,11 @@
         "bracket_token": {
           "group": "Bracket"
         },
-        "meta": {
-          "syn": "Meta"
+        "path": {
+          "syn": "Path"
+        },
+        "tokens": {
+          "proc_macro2": "TokenStream"
         }
       }
     },
@@ -217,42 +170,6 @@
       }
     },
     {
-      "ident": "BareVariadic",
-      "features": {
-        "any": [
-          "derive",
-          "full"
-        ]
-      },
-      "fields": {
-        "attrs": {
-          "vec": {
-            "syn": "Attribute"
-          }
-        },
-        "name": {
-          "option": {
-            "tuple": [
-              {
-                "proc_macro2": "Ident"
-              },
-              {
-                "token": "Colon"
-              }
-            ]
-          }
-        },
-        "dots": {
-          "token": "DotDotDot"
-        },
-        "comma": {
-          "option": {
-            "token": "Comma"
-          }
-        }
-      }
-    },
-    {
       "ident": "BinOp",
       "features": {
         "any": [
@@ -263,12 +180,12 @@
       "variants": {
         "Add": [
           {
-            "token": "Plus"
+            "token": "Add"
           }
         ],
         "Sub": [
           {
-            "token": "Minus"
+            "token": "Sub"
           }
         ],
         "Mul": [
@@ -278,12 +195,12 @@
         ],
         "Div": [
           {
-            "token": "Slash"
+            "token": "Div"
           }
         ],
         "Rem": [
           {
-            "token": "Percent"
+            "token": "Rem"
           }
         ],
         "And": [
@@ -351,58 +268,77 @@
             "token": "Gt"
           }
         ],
-        "AddAssign": [
+        "AddEq": [
           {
-            "token": "PlusEq"
+            "token": "AddEq"
           }
         ],
-        "SubAssign": [
+        "SubEq": [
           {
-            "token": "MinusEq"
+            "token": "SubEq"
           }
         ],
-        "MulAssign": [
+        "MulEq": [
           {
-            "token": "StarEq"
+            "token": "MulEq"
           }
         ],
-        "DivAssign": [
+        "DivEq": [
           {
-            "token": "SlashEq"
+            "token": "DivEq"
           }
         ],
-        "RemAssign": [
+        "RemEq": [
           {
-            "token": "PercentEq"
+            "token": "RemEq"
           }
         ],
-        "BitXorAssign": [
+        "BitXorEq": [
           {
             "token": "CaretEq"
           }
         ],
-        "BitAndAssign": [
+        "BitAndEq": [
           {
             "token": "AndEq"
           }
         ],
-        "BitOrAssign": [
+        "BitOrEq": [
           {
             "token": "OrEq"
           }
         ],
-        "ShlAssign": [
+        "ShlEq": [
           {
             "token": "ShlEq"
           }
         ],
-        "ShrAssign": [
+        "ShrEq": [
           {
             "token": "ShrEq"
           }
         ]
+      }
+    },
+    {
+      "ident": "Binding",
+      "features": {
+        "any": [
+          "derive",
+          "full"
+        ]
       },
-      "exhaustive": false
+      "fields": {
+        "ident": {
+          "proc_macro2": "Ident"
+        },
+        "eq_token": {
+          "token": "Eq"
+        },
+        "ty": {
+          "syn": "Type"
+        }
+      }
     },
     {
       "ident": "Block",
@@ -440,7 +376,7 @@
         "lifetimes": {
           "punctuated": {
             "element": {
-              "syn": "GenericParam"
+              "syn": "LifetimeDef"
             },
             "punct": "Comma"
           }
@@ -500,11 +436,6 @@
         "ident": {
           "proc_macro2": "Ident"
         },
-        "generics": {
-          "option": {
-            "syn": "AngleBracketedGenericArguments"
-          }
-        },
         "colon_token": {
           "token": "Colon"
         },
@@ -513,7 +444,7 @@
             "element": {
               "syn": "TypeParamBound"
             },
-            "punct": "Plus"
+            "punct": "Add"
           }
         }
       }
@@ -650,6 +581,11 @@
             "syn": "ExprAssign"
           }
         ],
+        "AssignOp": [
+          {
+            "syn": "ExprAssignOp"
+          }
+        ],
         "Async": [
           {
             "syn": "ExprAsync"
@@ -670,6 +606,11 @@
             "syn": "ExprBlock"
           }
         ],
+        "Box": [
+          {
+            "syn": "ExprBox"
+          }
+        ],
         "Break": [
           {
             "syn": "ExprBreak"
@@ -688,11 +629,6 @@
         "Closure": [
           {
             "syn": "ExprClosure"
-          }
-        ],
-        "Const": [
-          {
-            "syn": "ExprConst"
           }
         ],
         "Continue": [
@@ -723,11 +659,6 @@
         "Index": [
           {
             "syn": "ExprIndex"
-          }
-        ],
-        "Infer": [
-          {
-            "syn": "ExprInfer"
           }
         ],
         "Let": [
@@ -810,6 +741,11 @@
             "syn": "ExprTuple"
           }
         ],
+        "Type": [
+          {
+            "syn": "ExprType"
+          }
+        ],
         "Unary": [
           {
             "syn": "ExprUnary"
@@ -884,6 +820,34 @@
         },
         "eq_token": {
           "token": "Eq"
+        },
+        "right": {
+          "box": {
+            "syn": "Expr"
+          }
+        }
+      }
+    },
+    {
+      "ident": "ExprAssignOp",
+      "features": {
+        "any": [
+          "full"
+        ]
+      },
+      "fields": {
+        "attrs": {
+          "vec": {
+            "syn": "Attribute"
+          }
+        },
+        "left": {
+          "box": {
+            "syn": "Expr"
+          }
+        },
+        "op": {
+          "syn": "BinOp"
         },
         "right": {
           "box": {
@@ -997,6 +961,29 @@
       }
     },
     {
+      "ident": "ExprBox",
+      "features": {
+        "any": [
+          "full"
+        ]
+      },
+      "fields": {
+        "attrs": {
+          "vec": {
+            "syn": "Attribute"
+          }
+        },
+        "box_token": {
+          "token": "Box"
+        },
+        "expr": {
+          "box": {
+            "syn": "Expr"
+          }
+        }
+      }
+    },
+    {
       "ident": "ExprBreak",
       "features": {
         "any": [
@@ -1100,16 +1087,6 @@
             "syn": "Attribute"
           }
         },
-        "lifetimes": {
-          "option": {
-            "syn": "BoundLifetimes"
-          }
-        },
-        "constness": {
-          "option": {
-            "token": "Const"
-          }
-        },
         "movability": {
           "option": {
             "token": "Static"
@@ -1146,27 +1123,6 @@
           "box": {
             "syn": "Expr"
           }
-        }
-      }
-    },
-    {
-      "ident": "ExprConst",
-      "features": {
-        "any": [
-          "full"
-        ]
-      },
-      "fields": {
-        "attrs": {
-          "vec": {
-            "syn": "Attribute"
-          }
-        },
-        "const_token": {
-          "token": "Const"
-        },
-        "block": {
-          "syn": "Block"
         }
       }
     },
@@ -1242,9 +1198,7 @@
           "token": "For"
         },
         "pat": {
-          "box": {
-            "syn": "Pat"
-          }
+          "syn": "Pat"
         },
         "in_token": {
           "token": "In"
@@ -1263,7 +1217,6 @@
       "ident": "ExprGroup",
       "features": {
         "any": [
-          "derive",
           "full"
         ]
       },
@@ -1353,24 +1306,6 @@
       }
     },
     {
-      "ident": "ExprInfer",
-      "features": {
-        "any": [
-          "full"
-        ]
-      },
-      "fields": {
-        "attrs": {
-          "vec": {
-            "syn": "Attribute"
-          }
-        },
-        "underscore_token": {
-          "token": "Underscore"
-        }
-      }
-    },
-    {
       "ident": "ExprLet",
       "features": {
         "any": [
@@ -1387,9 +1322,7 @@
           "token": "Let"
         },
         "pat": {
-          "box": {
-            "syn": "Pat"
-          }
+          "syn": "Pat"
         },
         "eq_token": {
           "token": "Eq"
@@ -1450,7 +1383,6 @@
       "ident": "ExprMacro",
       "features": {
         "any": [
-          "derive",
           "full"
         ]
       },
@@ -1500,7 +1432,6 @@
       "ident": "ExprMethodCall",
       "features": {
         "any": [
-          "derive",
           "full"
         ]
       },
@@ -1523,7 +1454,7 @@
         },
         "turbofish": {
           "option": {
-            "syn": "AngleBracketedGenericArguments"
+            "syn": "MethodTurbofish"
           }
         },
         "paren_token": {
@@ -1600,7 +1531,7 @@
             "syn": "Attribute"
           }
         },
-        "start": {
+        "from": {
           "option": {
             "box": {
               "syn": "Expr"
@@ -1610,7 +1541,7 @@
         "limits": {
           "syn": "RangeLimits"
         },
-        "end": {
+        "to": {
           "option": {
             "box": {
               "syn": "Expr"
@@ -1623,7 +1554,6 @@
       "ident": "ExprReference",
       "features": {
         "any": [
-          "derive",
           "full"
         ]
       },
@@ -1635,6 +1565,9 @@
         },
         "and_token": {
           "token": "And"
+        },
+        "raw": {
+          "syn": "Reserved"
         },
         "mutability": {
           "option": {
@@ -1708,7 +1641,6 @@
       "ident": "ExprStruct",
       "features": {
         "any": [
-          "derive",
           "full"
         ]
       },
@@ -1716,11 +1648,6 @@
         "attrs": {
           "vec": {
             "syn": "Attribute"
-          }
-        },
-        "qself": {
-          "option": {
-            "syn": "QSelf"
           }
         },
         "path": {
@@ -1739,7 +1666,7 @@
         },
         "dot2_token": {
           "option": {
-            "token": "DotDot"
+            "token": "Dot2"
           }
         },
         "rest": {
@@ -1817,6 +1744,34 @@
               "syn": "Expr"
             },
             "punct": "Comma"
+          }
+        }
+      }
+    },
+    {
+      "ident": "ExprType",
+      "features": {
+        "any": [
+          "full"
+        ]
+      },
+      "fields": {
+        "attrs": {
+          "vec": {
+            "syn": "Attribute"
+          }
+        },
+        "expr": {
+          "box": {
+            "syn": "Expr"
+          }
+        },
+        "colon_token": {
+          "token": "Colon"
+        },
+        "ty": {
+          "box": {
+            "syn": "Type"
           }
         }
       }
@@ -1939,9 +1894,6 @@
         "vis": {
           "syn": "Visibility"
         },
-        "mutability": {
-          "syn": "FieldMutability"
-        },
         "ident": {
           "option": {
             "proc_macro2": "Ident"
@@ -1956,19 +1908,6 @@
           "syn": "Type"
         }
       }
-    },
-    {
-      "ident": "FieldMutability",
-      "features": {
-        "any": [
-          "derive",
-          "full"
-        ]
-      },
-      "variants": {
-        "None": []
-      },
-      "exhaustive": false
     },
     {
       "ident": "FieldPat",
@@ -2002,7 +1941,6 @@
       "ident": "FieldValue",
       "features": {
         "any": [
-          "derive",
           "full"
         ]
       },
@@ -2239,7 +2177,9 @@
           "token": "Static"
         },
         "mutability": {
-          "syn": "StaticMutability"
+          "option": {
+            "token": "Mut"
+          }
         },
         "ident": {
           "proc_macro2": "Ident"
@@ -2279,9 +2219,6 @@
         "ident": {
           "proc_macro2": "Ident"
         },
-        "generics": {
-          "syn": "Generics"
-        },
         "semi_token": {
           "token": "Semi"
         }
@@ -2311,14 +2248,9 @@
             "syn": "Expr"
           }
         ],
-        "AssocType": [
+        "Binding": [
           {
-            "syn": "AssocType"
-          }
-        ],
-        "AssocConst": [
-          {
-            "syn": "AssocConst"
+            "syn": "Binding"
           }
         ],
         "Constraint": [
@@ -2326,8 +2258,27 @@
             "syn": "Constraint"
           }
         ]
+      }
+    },
+    {
+      "ident": "GenericMethodArgument",
+      "features": {
+        "any": [
+          "full"
+        ]
       },
-      "exhaustive": false
+      "variants": {
+        "Type": [
+          {
+            "syn": "Type"
+          }
+        ],
+        "Const": [
+          {
+            "syn": "Expr"
+          }
+        ]
+      }
     },
     {
       "ident": "GenericParam",
@@ -2338,14 +2289,14 @@
         ]
       },
       "variants": {
-        "Lifetime": [
-          {
-            "syn": "LifetimeParam"
-          }
-        ],
         "Type": [
           {
             "syn": "TypeParam"
+          }
+        ],
+        "Lifetime": [
+          {
+            "syn": "LifetimeDef"
           }
         ],
         "Const": [
@@ -2402,9 +2353,9 @@
             "syn": "ImplItemConst"
           }
         ],
-        "Fn": [
+        "Method": [
           {
-            "syn": "ImplItemFn"
+            "syn": "ImplItemMethod"
           }
         ],
         "Type": [
@@ -2452,9 +2403,6 @@
         "ident": {
           "proc_macro2": "Ident"
         },
-        "generics": {
-          "syn": "Generics"
-        },
         "colon_token": {
           "token": "Colon"
         },
@@ -2473,7 +2421,30 @@
       }
     },
     {
-      "ident": "ImplItemFn",
+      "ident": "ImplItemMacro",
+      "features": {
+        "any": [
+          "full"
+        ]
+      },
+      "fields": {
+        "attrs": {
+          "vec": {
+            "syn": "Attribute"
+          }
+        },
+        "mac": {
+          "syn": "Macro"
+        },
+        "semi_token": {
+          "option": {
+            "token": "Semi"
+          }
+        }
+      }
+    },
+    {
+      "ident": "ImplItemMethod",
       "features": {
         "any": [
           "full"
@@ -2498,29 +2469,6 @@
         },
         "block": {
           "syn": "Block"
-        }
-      }
-    },
-    {
-      "ident": "ImplItemMacro",
-      "features": {
-        "any": [
-          "full"
-        ]
-      },
-      "fields": {
-        "attrs": {
-          "vec": {
-            "syn": "Attribute"
-          }
-        },
-        "mac": {
-          "syn": "Macro"
-        },
-        "semi_token": {
-          "option": {
-            "token": "Semi"
-          }
         }
       }
     },
@@ -2564,16 +2512,6 @@
           "token": "Semi"
         }
       }
-    },
-    {
-      "ident": "ImplRestriction",
-      "features": {
-        "any": [
-          "full"
-        ]
-      },
-      "variants": {},
-      "exhaustive": false
     },
     {
       "ident": "Index",
@@ -2633,6 +2571,11 @@
         "Macro": [
           {
             "syn": "ItemMacro"
+          }
+        ],
+        "Macro2": [
+          {
+            "syn": "ItemMacro2"
           }
         ],
         "Mod": [
@@ -2704,9 +2647,6 @@
         },
         "ident": {
           "proc_macro2": "Ident"
-        },
-        "generics": {
-          "syn": "Generics"
         },
         "colon_token": {
           "token": "Colon"
@@ -2848,11 +2788,6 @@
             "syn": "Attribute"
           }
         },
-        "unsafety": {
-          "option": {
-            "token": "Unsafe"
-          }
-        },
         "abi": {
           "syn": "Abi"
         },
@@ -2900,7 +2835,7 @@
             "tuple": [
               {
                 "option": {
-                  "token": "Not"
+                  "token": "Bang"
                 }
               },
               {
@@ -2956,7 +2891,7 @@
       }
     },
     {
-      "ident": "ItemMod",
+      "ident": "ItemMacro2",
       "features": {
         "any": [
           "full"
@@ -2971,10 +2906,32 @@
         "vis": {
           "syn": "Visibility"
         },
-        "unsafety": {
-          "option": {
-            "token": "Unsafe"
+        "macro_token": {
+          "token": "Macro"
+        },
+        "ident": {
+          "proc_macro2": "Ident"
+        },
+        "rules": {
+          "proc_macro2": "TokenStream"
+        }
+      }
+    },
+    {
+      "ident": "ItemMod",
+      "features": {
+        "any": [
+          "full"
+        ]
+      },
+      "fields": {
+        "attrs": {
+          "vec": {
+            "syn": "Attribute"
           }
+        },
+        "vis": {
+          "syn": "Visibility"
         },
         "mod_token": {
           "token": "Mod"
@@ -3023,7 +2980,9 @@
           "token": "Static"
         },
         "mutability": {
-          "syn": "StaticMutability"
+          "option": {
+            "token": "Mut"
+          }
         },
         "ident": {
           "proc_macro2": "Ident"
@@ -3110,11 +3069,6 @@
             "token": "Auto"
           }
         },
-        "restriction": {
-          "option": {
-            "syn": "ImplRestriction"
-          }
-        },
         "trait_token": {
           "token": "Trait"
         },
@@ -3134,7 +3088,7 @@
             "element": {
               "syn": "TypeParamBound"
             },
-            "punct": "Plus"
+            "punct": "Add"
           }
         },
         "brace_token": {
@@ -3180,7 +3134,7 @@
             "element": {
               "syn": "TypeParamBound"
             },
-            "punct": "Plus"
+            "punct": "Add"
           }
         },
         "semi_token": {
@@ -3277,7 +3231,7 @@
         },
         "leading_colon": {
           "option": {
-            "token": "PathSep"
+            "token": "Colon2"
           }
         },
         "tree": {
@@ -3319,7 +3273,7 @@
       }
     },
     {
-      "ident": "LifetimeParam",
+      "ident": "LifetimeDef",
       "features": {
         "any": [
           "derive",
@@ -3345,7 +3299,7 @@
             "element": {
               "syn": "Lifetime"
             },
-            "punct": "Plus"
+            "punct": "Add"
           }
         }
       }
@@ -3396,8 +3350,7 @@
             "proc_macro2": "Literal"
           }
         ]
-      },
-      "exhaustive": false
+      }
     },
     {
       "ident": "LitBool",
@@ -3470,35 +3423,9 @@
         },
         "init": {
           "option": {
-            "syn": "LocalInit"
-          }
-        },
-        "semi_token": {
-          "token": "Semi"
-        }
-      }
-    },
-    {
-      "ident": "LocalInit",
-      "features": {
-        "any": [
-          "full"
-        ]
-      },
-      "fields": {
-        "eq_token": {
-          "token": "Eq"
-        },
-        "expr": {
-          "box": {
-            "syn": "Expr"
-          }
-        },
-        "diverge": {
-          "option": {
             "tuple": [
               {
-                "token": "Else"
+                "token": "Eq"
               },
               {
                 "box": {
@@ -3507,6 +3434,9 @@
               }
             ]
           }
+        },
+        "semi_token": {
+          "token": "Semi"
         }
       }
     },
@@ -3523,7 +3453,7 @@
           "syn": "Path"
         },
         "bang_token": {
-          "token": "Not"
+          "token": "Bang"
         },
         "delimiter": {
           "syn": "MacroDelimiter"
@@ -3618,11 +3548,16 @@
         "path": {
           "syn": "Path"
         },
-        "delimiter": {
-          "syn": "MacroDelimiter"
+        "paren_token": {
+          "group": "Paren"
         },
-        "tokens": {
-          "proc_macro2": "TokenStream"
+        "nested": {
+          "punctuated": {
+            "element": {
+              "syn": "NestedMeta"
+            },
+            "punct": "Comma"
+          }
         }
       }
     },
@@ -3641,9 +3576,57 @@
         "eq_token": {
           "token": "Eq"
         },
-        "value": {
-          "syn": "Expr"
+        "lit": {
+          "syn": "Lit"
         }
+      }
+    },
+    {
+      "ident": "MethodTurbofish",
+      "features": {
+        "any": [
+          "full"
+        ]
+      },
+      "fields": {
+        "colon2_token": {
+          "token": "Colon2"
+        },
+        "lt_token": {
+          "token": "Lt"
+        },
+        "args": {
+          "punctuated": {
+            "element": {
+              "syn": "GenericMethodArgument"
+            },
+            "punct": "Comma"
+          }
+        },
+        "gt_token": {
+          "token": "Gt"
+        }
+      }
+    },
+    {
+      "ident": "NestedMeta",
+      "features": {
+        "any": [
+          "derive",
+          "full"
+        ]
+      },
+      "variants": {
+        "Meta": [
+          {
+            "syn": "Meta"
+          }
+        ],
+        "Lit": [
+          {
+            "syn": "Lit"
+          }
+        ]
       }
     },
     {
@@ -3679,9 +3662,9 @@
         ]
       },
       "variants": {
-        "Const": [
+        "Box": [
           {
-            "syn": "ExprConst"
+            "syn": "PatBox"
           }
         ],
         "Ident": [
@@ -3691,12 +3674,12 @@
         ],
         "Lit": [
           {
-            "syn": "ExprLit"
+            "syn": "PatLit"
           }
         ],
         "Macro": [
           {
-            "syn": "ExprMacro"
+            "syn": "PatMacro"
           }
         ],
         "Or": [
@@ -3704,19 +3687,14 @@
             "syn": "PatOr"
           }
         ],
-        "Paren": [
-          {
-            "syn": "PatParen"
-          }
-        ],
         "Path": [
           {
-            "syn": "ExprPath"
+            "syn": "PatPath"
           }
         ],
         "Range": [
           {
-            "syn": "ExprRange"
+            "syn": "PatRange"
           }
         ],
         "Reference": [
@@ -3768,6 +3746,29 @@
       "exhaustive": false
     },
     {
+      "ident": "PatBox",
+      "features": {
+        "any": [
+          "full"
+        ]
+      },
+      "fields": {
+        "attrs": {
+          "vec": {
+            "syn": "Attribute"
+          }
+        },
+        "box_token": {
+          "token": "Box"
+        },
+        "pat": {
+          "box": {
+            "syn": "Pat"
+          }
+        }
+      }
+    },
+    {
       "ident": "PatIdent",
       "features": {
         "any": [
@@ -3810,6 +3811,44 @@
       }
     },
     {
+      "ident": "PatLit",
+      "features": {
+        "any": [
+          "full"
+        ]
+      },
+      "fields": {
+        "attrs": {
+          "vec": {
+            "syn": "Attribute"
+          }
+        },
+        "expr": {
+          "box": {
+            "syn": "Expr"
+          }
+        }
+      }
+    },
+    {
+      "ident": "PatMacro",
+      "features": {
+        "any": [
+          "full"
+        ]
+      },
+      "fields": {
+        "attrs": {
+          "vec": {
+            "syn": "Attribute"
+          }
+        },
+        "mac": {
+          "syn": "Macro"
+        }
+      }
+    },
+    {
       "ident": "PatOr",
       "features": {
         "any": [
@@ -3838,7 +3877,7 @@
       }
     },
     {
-      "ident": "PatParen",
+      "ident": "PatPath",
       "features": {
         "any": [
           "full"
@@ -3850,12 +3889,40 @@
             "syn": "Attribute"
           }
         },
-        "paren_token": {
-          "group": "Paren"
+        "qself": {
+          "option": {
+            "syn": "QSelf"
+          }
         },
-        "pat": {
+        "path": {
+          "syn": "Path"
+        }
+      }
+    },
+    {
+      "ident": "PatRange",
+      "features": {
+        "any": [
+          "full"
+        ]
+      },
+      "fields": {
+        "attrs": {
+          "vec": {
+            "syn": "Attribute"
+          }
+        },
+        "lo": {
           "box": {
-            "syn": "Pat"
+            "syn": "Expr"
+          }
+        },
+        "limits": {
+          "syn": "RangeLimits"
+        },
+        "hi": {
+          "box": {
+            "syn": "Expr"
           }
         }
       }
@@ -3902,7 +3969,7 @@
           }
         },
         "dot2_token": {
-          "token": "DotDot"
+          "token": "Dot2"
         }
       }
     },
@@ -3945,11 +4012,6 @@
             "syn": "Attribute"
           }
         },
-        "qself": {
-          "option": {
-            "syn": "QSelf"
-          }
-        },
         "path": {
           "syn": "Path"
         },
@@ -3964,9 +4026,9 @@
             "punct": "Comma"
           }
         },
-        "rest": {
+        "dot2_token": {
           "option": {
-            "syn": "PatRest"
+            "token": "Dot2"
           }
         }
       }
@@ -4010,24 +4072,11 @@
             "syn": "Attribute"
           }
         },
-        "qself": {
-          "option": {
-            "syn": "QSelf"
-          }
-        },
         "path": {
           "syn": "Path"
         },
-        "paren_token": {
-          "group": "Paren"
-        },
-        "elems": {
-          "punctuated": {
-            "element": {
-              "syn": "Pat"
-            },
-            "punct": "Comma"
-          }
+        "pat": {
+          "syn": "PatTuple"
         }
       }
     },
@@ -4088,7 +4137,7 @@
       "fields": {
         "leading_colon": {
           "option": {
-            "token": "PathSep"
+            "token": "Colon2"
           }
         },
         "segments": {
@@ -4096,7 +4145,7 @@
             "element": {
               "syn": "PathSegment"
             },
-            "punct": "PathSep"
+            "punct": "Colon2"
           }
         }
       }
@@ -4141,6 +4190,26 @@
       }
     },
     {
+      "ident": "PredicateEq",
+      "features": {
+        "any": [
+          "derive",
+          "full"
+        ]
+      },
+      "fields": {
+        "lhs_ty": {
+          "syn": "Type"
+        },
+        "eq_token": {
+          "token": "Eq"
+        },
+        "rhs_ty": {
+          "syn": "Type"
+        }
+      }
+    },
+    {
       "ident": "PredicateLifetime",
       "features": {
         "any": [
@@ -4160,7 +4229,7 @@
             "element": {
               "syn": "Lifetime"
             },
-            "punct": "Plus"
+            "punct": "Add"
           }
         }
       }
@@ -4190,7 +4259,7 @@
             "element": {
               "syn": "TypeParamBound"
             },
-            "punct": "Plus"
+            "punct": "Add"
           }
         }
       }
@@ -4235,7 +4304,7 @@
       "variants": {
         "HalfOpen": [
           {
-            "token": "DotDot"
+            "token": "Dot2"
           }
         ],
         "Closed": [
@@ -4279,16 +4348,6 @@
         },
         "self_token": {
           "token": "SelfValue"
-        },
-        "colon_token": {
-          "option": {
-            "token": "Colon"
-          }
-        },
-        "ty": {
-          "box": {
-            "syn": "Type"
-          }
         }
       }
     },
@@ -4373,23 +4432,6 @@
       }
     },
     {
-      "ident": "StaticMutability",
-      "features": {
-        "any": [
-          "full"
-        ]
-      },
-      "variants": {
-        "Mut": [
-          {
-            "token": "Mut"
-          }
-        ],
-        "None": []
-      },
-      "exhaustive": false
-    },
-    {
       "ident": "Stmt",
       "features": {
         "any": [
@@ -4410,41 +4452,16 @@
         "Expr": [
           {
             "syn": "Expr"
-          },
-          {
-            "option": {
-              "token": "Semi"
-            }
           }
         ],
-        "Macro": [
+        "Semi": [
           {
-            "syn": "StmtMacro"
-          }
-        ]
-      }
-    },
-    {
-      "ident": "StmtMacro",
-      "features": {
-        "any": [
-          "full"
-        ]
-      },
-      "fields": {
-        "attrs": {
-          "vec": {
-            "syn": "Attribute"
-          }
-        },
-        "mac": {
-          "syn": "Macro"
-        },
-        "semi_token": {
-          "option": {
+            "syn": "Expr"
+          },
+          {
             "token": "Semi"
           }
-        }
+        ]
       }
     },
     {
@@ -4504,9 +4521,9 @@
             "syn": "TraitItemConst"
           }
         ],
-        "Fn": [
+        "Method": [
           {
-            "syn": "TraitItemFn"
+            "syn": "TraitItemMethod"
           }
         ],
         "Type": [
@@ -4546,9 +4563,6 @@
         "ident": {
           "proc_macro2": "Ident"
         },
-        "generics": {
-          "syn": "Generics"
-        },
         "colon_token": {
           "token": "Colon"
         },
@@ -4573,7 +4587,30 @@
       }
     },
     {
-      "ident": "TraitItemFn",
+      "ident": "TraitItemMacro",
+      "features": {
+        "any": [
+          "full"
+        ]
+      },
+      "fields": {
+        "attrs": {
+          "vec": {
+            "syn": "Attribute"
+          }
+        },
+        "mac": {
+          "syn": "Macro"
+        },
+        "semi_token": {
+          "option": {
+            "token": "Semi"
+          }
+        }
+      }
+    },
+    {
+      "ident": "TraitItemMethod",
       "features": {
         "any": [
           "full"
@@ -4592,29 +4629,6 @@
           "option": {
             "syn": "Block"
           }
-        },
-        "semi_token": {
-          "option": {
-            "token": "Semi"
-          }
-        }
-      }
-    },
-    {
-      "ident": "TraitItemMacro",
-      "features": {
-        "any": [
-          "full"
-        ]
-      },
-      "fields": {
-        "attrs": {
-          "vec": {
-            "syn": "Attribute"
-          }
-        },
-        "mac": {
-          "syn": "Macro"
         },
         "semi_token": {
           "option": {
@@ -4655,7 +4669,7 @@
             "element": {
               "syn": "TypeParamBound"
             },
-            "punct": "Plus"
+            "punct": "Add"
           }
         },
         "default": {
@@ -4827,7 +4841,7 @@
         },
         "variadic": {
           "option": {
-            "syn": "BareVariadic"
+            "syn": "Variadic"
           }
         },
         "output": {
@@ -4871,7 +4885,7 @@
             "element": {
               "syn": "TypeParamBound"
             },
-            "punct": "Plus"
+            "punct": "Add"
           }
         }
       }
@@ -4914,7 +4928,7 @@
       },
       "fields": {
         "bang_token": {
-          "token": "Not"
+          "token": "Bang"
         }
       }
     },
@@ -4945,7 +4959,7 @@
             "element": {
               "syn": "TypeParamBound"
             },
-            "punct": "Plus"
+            "punct": "Add"
           }
         },
         "eq_token": {
@@ -4978,14 +4992,8 @@
           {
             "syn": "Lifetime"
           }
-        ],
-        "Verbatim": [
-          {
-            "proc_macro2": "TokenStream"
-          }
         ]
-      },
-      "exhaustive": false
+      }
     },
     {
       "ident": "TypeParen",
@@ -5121,7 +5129,7 @@
             "element": {
               "syn": "TypeParamBound"
             },
-            "punct": "Plus"
+            "punct": "Add"
           }
         }
       }
@@ -5164,16 +5172,15 @@
         ],
         "Not": [
           {
-            "token": "Not"
+            "token": "Bang"
           }
         ],
         "Neg": [
           {
-            "token": "Minus"
+            "token": "Sub"
           }
         ]
-      },
-      "exhaustive": false
+      }
     },
     {
       "ident": "UseGlob",
@@ -5234,7 +5241,7 @@
           "proc_macro2": "Ident"
         },
         "colon2_token": {
-          "token": "PathSep"
+          "token": "Colon2"
         },
         "tree": {
           "box": {
@@ -5301,6 +5308,7 @@
       "ident": "Variadic",
       "features": {
         "any": [
+          "derive",
           "full"
         ]
       },
@@ -5310,27 +5318,8 @@
             "syn": "Attribute"
           }
         },
-        "pat": {
-          "option": {
-            "tuple": [
-              {
-                "box": {
-                  "syn": "Pat"
-                }
-              },
-              {
-                "token": "Colon"
-              }
-            ]
-          }
-        },
         "dots": {
-          "token": "DotDotDot"
-        },
-        "comma": {
-          "option": {
-            "token": "Comma"
-          }
+          "token": "Dot3"
         }
       }
     },
@@ -5365,6 +5354,34 @@
               }
             ]
           }
+        }
+      }
+    },
+    {
+      "ident": "VisCrate",
+      "features": {
+        "any": [
+          "derive",
+          "full"
+        ]
+      },
+      "fields": {
+        "crate_token": {
+          "token": "Crate"
+        }
+      }
+    },
+    {
+      "ident": "VisPublic",
+      "features": {
+        "any": [
+          "derive",
+          "full"
+        ]
+      },
+      "fields": {
+        "pub_token": {
+          "token": "Pub"
         }
       }
     },
@@ -5406,7 +5423,12 @@
       "variants": {
         "Public": [
           {
-            "token": "Pub"
+            "syn": "VisPublic"
+          }
+        ],
+        "Crate": [
+          {
+            "syn": "VisCrate"
           }
         ],
         "Restricted": [
@@ -5448,22 +5470,28 @@
         ]
       },
       "variants": {
+        "Type": [
+          {
+            "syn": "PredicateType"
+          }
+        ],
         "Lifetime": [
           {
             "syn": "PredicateLifetime"
           }
         ],
-        "Type": [
+        "Eq": [
           {
-            "syn": "PredicateType"
+            "syn": "PredicateEq"
           }
         ]
-      },
-      "exhaustive": false
+      }
     }
   ],
   "tokens": {
     "Abstract": "abstract",
+    "Add": "+",
+    "AddEq": "+=",
     "And": "&",
     "AndAnd": "&&",
     "AndEq": "&=",
@@ -5472,22 +5500,26 @@
     "At": "@",
     "Auto": "auto",
     "Await": "await",
+    "Bang": "!",
     "Become": "become",
     "Box": "box",
     "Break": "break",
     "Caret": "^",
     "CaretEq": "^=",
     "Colon": ":",
+    "Colon2": "::",
     "Comma": ",",
     "Const": "const",
     "Continue": "continue",
     "Crate": "crate",
     "Default": "default",
+    "Div": "/",
+    "DivEq": "/=",
     "Do": "do",
     "Dollar": "$",
     "Dot": ".",
-    "DotDot": "..",
-    "DotDotDot": "...",
+    "Dot2": "..",
+    "Dot3": "...",
     "DotDotEq": "..=",
     "Dyn": "dyn",
     "Else": "else",
@@ -5511,28 +5543,23 @@
     "Lt": "<",
     "Macro": "macro",
     "Match": "match",
-    "Minus": "-",
-    "MinusEq": "-=",
     "Mod": "mod",
     "Move": "move",
+    "MulEq": "*=",
     "Mut": "mut",
     "Ne": "!=",
-    "Not": "!",
     "Or": "|",
     "OrEq": "|=",
     "OrOr": "||",
     "Override": "override",
-    "PathSep": "::",
-    "Percent": "%",
-    "PercentEq": "%=",
-    "Plus": "+",
-    "PlusEq": "+=",
     "Pound": "#",
     "Priv": "priv",
     "Pub": "pub",
     "Question": "?",
     "RArrow": "->",
     "Ref": "ref",
+    "Rem": "%",
+    "RemEq": "%=",
     "Return": "return",
     "SelfType": "Self",
     "SelfValue": "self",
@@ -5541,12 +5568,11 @@
     "ShlEq": "<<=",
     "Shr": ">>",
     "ShrEq": ">>=",
-    "Slash": "/",
-    "SlashEq": "/=",
     "Star": "*",
-    "StarEq": "*=",
     "Static": "static",
     "Struct": "struct",
+    "Sub": "-",
+    "SubEq": "-=",
     "Super": "super",
     "Tilde": "~",
     "Trait": "trait",

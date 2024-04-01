@@ -1,54 +1,43 @@
-//! This test does the following for every file in the rust-lang/rust repo:
-//!
-//! 1. Parse the file using syn into a syn::File.
-//! 2. Extract every syn::Expr from the file.
-//! 3. Print each expr to a string of source code.
-//! 4. Parse the source code using librustc_parse into a rustc_ast::Expr.
-//! 5. For both the syn::Expr and rustc_ast::Expr, crawl the syntax tree to
-//!    insert parentheses surrounding every subexpression.
-//! 6. Serialize the fully parenthesized syn::Expr to a string of source code.
-//! 7. Parse the fully parenthesized source code using librustc_parse.
-//! 8. Compare the rustc_ast::Expr resulting from parenthesizing using rustc
-//!    data structures vs syn data structures, ignoring spans. If they agree,
-//!    rustc's parser and syn's parser have identical handling of expression
-//!    precedence.
-
 #![cfg(not(syn_disable_nightly_tests))]
 #![cfg(not(miri))]
 #![recursion_limit = "1024"]
 #![feature(rustc_private)]
 #![allow(
-    clippy::blocks_in_conditions,
-    clippy::doc_markdown,
     clippy::explicit_deref_methods,
-    clippy::let_underscore_untyped,
     clippy::manual_assert,
-    clippy::manual_let_else,
-    clippy::match_like_matches_macro,
     clippy::match_wildcard_for_single_variants,
-    clippy::too_many_lines,
-    clippy::uninlined_format_args
+    clippy::too_many_lines
 )]
 
+//! The tests in this module do the following:
+//!
+//! 1. Parse a given expression in both `syn` and `librustc`.
+//! 2. Fold over the expression adding brackets around each subexpression (with
+//!    some complications - see the `syn_brackets` and `librustc_brackets`
+//!    methods).
+//! 3. Serialize the `syn` expression back into a string, and re-parse it with
+//!    `librustc`.
+//! 4. Respan all of the expressions, replacing the spans with the default
+//!    spans.
+//! 5. Compare the expressions with one another, if they are not equal fail.
+
 extern crate rustc_ast;
-extern crate rustc_ast_pretty;
 extern crate rustc_data_structures;
-extern crate rustc_driver;
 extern crate rustc_span;
-extern crate smallvec;
 extern crate thin_vec;
 
 use crate::common::eq::SpanlessEq;
 use crate::common::parse;
-use quote::ToTokens;
+use quote::quote;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use regex::Regex;
 use rustc_ast::ast;
 use rustc_ast::ptr::P;
-use rustc_ast_pretty::pprust;
 use rustc_span::edition::Edition;
 use std::fs;
-use std::path::Path;
 use std::process;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use walkdir::{DirEntry, WalkDir};
 
 #[macro_use]
 mod macros;
@@ -58,6 +47,45 @@ mod common;
 
 mod repo;
 
+/// Test some pre-set expressions chosen by us.
+#[test]
+fn test_simple_precedence() {
+    const EXPRS: &[&str] = &[
+        "1 + 2 * 3 + 4",
+        "1 + 2 * ( 3 + 4 )",
+        "{ for i in r { } *some_ptr += 1; }",
+        "{ loop { break 5; } }",
+        "{ if true { () }.mthd() }",
+        "{ for i in unsafe { 20 } { } }",
+    ];
+
+    let mut failed = 0;
+
+    for input in EXPRS {
+        let expr = if let Some(expr) = parse::syn_expr(input) {
+            expr
+        } else {
+            failed += 1;
+            continue;
+        };
+
+        let pf = match test_expressions(Edition::Edition2018, vec![expr]) {
+            (1, 0) => "passed",
+            (0, 1) => {
+                failed += 1;
+                "failed"
+            }
+            _ => unreachable!(),
+        };
+        errorf!("=== {}: {}\n", input, pf);
+    }
+
+    if failed > 0 {
+        panic!("Failed {} tests", failed);
+    }
+}
+
+/// Test expressions from rustc, like in `test_round_trip`.
 #[test]
 fn test_rustc_precedence() {
     common::rayon_init();
@@ -70,35 +98,51 @@ fn test_rustc_precedence() {
     let passed = AtomicUsize::new(0);
     let failed = AtomicUsize::new(0);
 
-    repo::for_each_rust_file(|path| {
-        let content = fs::read_to_string(path).unwrap();
+    // 2018 edition is hard
+    let edition_regex = Regex::new(r"\b(async|try)[!(]").unwrap();
 
-        let (l_passed, l_failed) = match syn::parse_file(&content) {
-            Ok(file) => {
-                let edition = repo::edition(path).parse().unwrap();
-                let exprs = collect_exprs(file);
-                let (l_passed, l_failed) = test_expressions(path, edition, exprs);
-                errorf!(
-                    "=== {}: {} passed | {} failed\n",
-                    path.display(),
-                    l_passed,
-                    l_failed,
-                );
-                (l_passed, l_failed)
+    WalkDir::new("tests/rust")
+        .sort_by(|a, b| a.file_name().cmp(b.file_name()))
+        .into_iter()
+        .filter_entry(repo::base_dir_filter)
+        .collect::<Result<Vec<DirEntry>, walkdir::Error>>()
+        .unwrap()
+        .into_par_iter()
+        .for_each(|entry| {
+            let path = entry.path();
+            if path.is_dir() {
+                return;
             }
-            Err(msg) => {
-                errorf!("\nFAIL {} - syn failed to parse: {}\n", path.display(), msg);
-                (0, 1)
+
+            let content = fs::read_to_string(path).unwrap();
+            let content = edition_regex.replace_all(&content, "_$0");
+
+            let (l_passed, l_failed) = match syn::parse_file(&content) {
+                Ok(file) => {
+                    let edition = repo::edition(path).parse().unwrap();
+                    let exprs = collect_exprs(file);
+                    test_expressions(edition, exprs)
+                }
+                Err(msg) => {
+                    errorf!("syn failed to parse\n{:?}\n", msg);
+                    (0, 1)
+                }
+            };
+
+            errorf!(
+                "=== {}: {} passed | {} failed\n",
+                path.display(),
+                l_passed,
+                l_failed
+            );
+
+            passed.fetch_add(l_passed, Ordering::Relaxed);
+            let prev_failed = failed.fetch_add(l_failed, Ordering::Relaxed);
+
+            if prev_failed + l_failed >= abort_after {
+                process::exit(1);
             }
-        };
-
-        passed.fetch_add(l_passed, Ordering::Relaxed);
-        let prev_failed = failed.fetch_add(l_failed, Ordering::Relaxed);
-
-        if prev_failed + l_failed >= abort_after {
-            process::exit(1);
-        }
-    });
+        });
 
     let passed = passed.load(Ordering::Relaxed);
     let failed = failed.load(Ordering::Relaxed);
@@ -111,71 +155,37 @@ fn test_rustc_precedence() {
     }
 }
 
-fn test_expressions(path: &Path, edition: Edition, exprs: Vec<syn::Expr>) -> (usize, usize) {
+fn test_expressions(edition: Edition, exprs: Vec<syn::Expr>) -> (usize, usize) {
     let mut passed = 0;
     let mut failed = 0;
 
     rustc_span::create_session_if_not_set_then(edition, |_| {
         for expr in exprs {
-            let source_code = expr.to_token_stream().to_string();
-            let librustc_ast = if let Some(e) = librustc_parse_and_rewrite(&source_code) {
+            let raw = quote!(#expr).to_string();
+
+            let librustc_ast = if let Some(e) = librustc_parse_and_rewrite(&raw) {
                 e
             } else {
                 failed += 1;
-                errorf!(
-                    "\nFAIL {} - librustc failed to parse original\n",
-                    path.display(),
-                );
+                errorf!("\nFAIL - librustc failed to parse raw\n");
                 continue;
             };
 
-            let syn_parenthesized_code =
-                syn_parenthesize(expr.clone()).to_token_stream().to_string();
-            let syn_ast = if let Some(e) = parse::librustc_expr(&syn_parenthesized_code) {
+            let syn_expr = syn_brackets(expr);
+            let syn_ast = if let Some(e) = parse::librustc_expr(&quote!(#syn_expr).to_string()) {
                 e
             } else {
                 failed += 1;
-                errorf!(
-                    "\nFAIL {} - librustc failed to parse parenthesized\n",
-                    path.display(),
-                );
+                errorf!("\nFAIL - librustc failed to parse bracketed\n");
                 continue;
             };
 
-            if !SpanlessEq::eq(&syn_ast, &librustc_ast) {
+            if SpanlessEq::eq(&syn_ast, &librustc_ast) {
+                passed += 1;
+            } else {
                 failed += 1;
-                let syn_pretty = pprust::expr_to_string(&syn_ast);
-                let librustc_pretty = pprust::expr_to_string(&librustc_ast);
-                errorf!(
-                    "\nFAIL {}\n{}\nsyn != rustc\n{}\n",
-                    path.display(),
-                    syn_pretty,
-                    librustc_pretty,
-                );
-                continue;
+                errorf!("\nFAIL\n{:?}\n!=\n{:?}\n", syn_ast, librustc_ast);
             }
-
-            let expr_invisible = make_parens_invisible(expr);
-            let Ok(reparsed_expr_invisible) = syn::parse2(expr_invisible.to_token_stream()) else {
-                failed += 1;
-                errorf!(
-                    "\nFAIL {} - syn failed to parse invisible delimiters\n{}\n",
-                    path.display(),
-                    source_code,
-                );
-                continue;
-            };
-            if expr_invisible != reparsed_expr_invisible {
-                failed += 1;
-                errorf!(
-                    "\nFAIL {} - mismatch after parsing invisible delimiters\n{}\n",
-                    path.display(),
-                    source_code,
-                );
-                continue;
-            }
-
-            passed += 1;
         }
     });
 
@@ -183,37 +193,28 @@ fn test_expressions(path: &Path, edition: Edition, exprs: Vec<syn::Expr>) -> (us
 }
 
 fn librustc_parse_and_rewrite(input: &str) -> Option<P<ast::Expr>> {
-    parse::librustc_expr(input).map(librustc_parenthesize)
+    parse::librustc_expr(input).and_then(librustc_brackets)
 }
 
-fn librustc_parenthesize(mut librustc_expr: P<ast::Expr>) -> P<ast::Expr> {
+/// Wrap every expression which is not already wrapped in parens with parens, to
+/// reveal the precedence of the parsed expressions, and produce a stringified
+/// form of the resulting expression.
+///
+/// This method operates on librustc objects.
+fn librustc_brackets(mut librustc_expr: P<ast::Expr>) -> Option<P<ast::Expr>> {
     use rustc_ast::ast::{
-        AssocItem, AssocItemKind, Attribute, BinOpKind, Block, BorrowKind, BoundConstness, Expr,
-        ExprField, ExprKind, GenericArg, GenericBound, ItemKind, Local, LocalKind, Pat, Stmt,
-        StmtKind, StructExpr, StructRest, TraitBoundModifiers, Ty,
+        Attribute, Block, BorrowKind, Expr, ExprField, ExprKind, GenericArg, Local, LocalKind, Pat,
+        Stmt, StmtKind, StructExpr, StructRest, Ty,
     };
-    use rustc_ast::mut_visit::{
-        noop_flat_map_assoc_item, noop_visit_generic_arg, noop_visit_item_kind, noop_visit_local,
-        noop_visit_param_bound, MutVisitor,
-    };
-    use rustc_data_structures::flat_map_in_place::FlatMapInPlace;
+    use rustc_ast::mut_visit::{noop_visit_generic_arg, noop_visit_local, MutVisitor};
+    use rustc_data_structures::map_in_place::MapInPlace;
     use rustc_span::DUMMY_SP;
-    use smallvec::SmallVec;
     use std::mem;
     use std::ops::DerefMut;
     use thin_vec::ThinVec;
 
-    struct FullyParenthesize;
-
-    fn contains_let_chain(expr: &Expr) -> bool {
-        match &expr.kind {
-            ExprKind::Let(..) => true,
-            ExprKind::Binary(binop, left, right) => {
-                binop.node == BinOpKind::And
-                    && (contains_let_chain(left) || contains_let_chain(right))
-            }
-            _ => false,
-        }
+    struct BracketsVisitor {
+        failed: bool,
     }
 
     fn flat_map_field<T: MutVisitor>(mut f: ExprField, vis: &mut T) -> Vec<ExprField> {
@@ -267,12 +268,14 @@ fn librustc_parenthesize(mut librustc_expr: P<ast::Expr>) -> P<ast::Expr> {
         }
     }
 
-    impl MutVisitor for FullyParenthesize {
+    impl MutVisitor for BracketsVisitor {
         fn visit_expr(&mut self, e: &mut P<Expr>) {
-            noop_visit_expr(e, self);
             match e.kind {
-                ExprKind::Block(..) | ExprKind::If(..) | ExprKind::Let(..) => {}
-                ExprKind::Binary(..) if contains_let_chain(e) => {}
+                ExprKind::ConstBlock(..) => {}
+                _ => noop_visit_expr(e, self),
+            }
+            match e.kind {
+                ExprKind::If(..) | ExprKind::Block(..) | ExprKind::Let(..) => {}
                 _ => {
                     let inner = mem::replace(
                         e,
@@ -301,19 +304,6 @@ fn librustc_parenthesize(mut librustc_expr: P<ast::Expr>) -> P<ast::Expr> {
             }
         }
 
-        fn visit_param_bound(&mut self, bound: &mut GenericBound) {
-            match bound {
-                GenericBound::Trait(
-                    _,
-                    TraitBoundModifiers {
-                        constness: BoundConstness::Maybe(_),
-                        ..
-                    },
-                ) => {}
-                _ => noop_visit_param_bound(bound, self),
-            }
-        }
-
         fn visit_block(&mut self, block: &mut P<Block>) {
             self.visit_id(&mut block.id);
             block
@@ -329,102 +319,51 @@ fn librustc_parenthesize(mut librustc_expr: P<ast::Expr>) -> P<ast::Expr> {
             }
         }
 
-        fn visit_item_kind(&mut self, item: &mut ItemKind) {
-            match item {
-                ItemKind::Const(const_item)
-                    if !const_item.generics.params.is_empty()
-                        || !const_item.generics.where_clause.predicates.is_empty() => {}
-                _ => noop_visit_item_kind(item, self),
-            }
-        }
-
-        fn flat_map_trait_item(&mut self, item: P<AssocItem>) -> SmallVec<[P<AssocItem>; 1]> {
-            match &item.kind {
-                AssocItemKind::Const(const_item)
-                    if !const_item.generics.params.is_empty()
-                        || !const_item.generics.where_clause.predicates.is_empty() =>
-                {
-                    SmallVec::from([item])
-                }
-                _ => noop_flat_map_assoc_item(item, self),
-            }
-        }
-
-        fn flat_map_impl_item(&mut self, item: P<AssocItem>) -> SmallVec<[P<AssocItem>; 1]> {
-            match &item.kind {
-                AssocItemKind::Const(const_item)
-                    if !const_item.generics.params.is_empty()
-                        || !const_item.generics.where_clause.predicates.is_empty() =>
-                {
-                    SmallVec::from([item])
-                }
-                _ => noop_flat_map_assoc_item(item, self),
-            }
-        }
-
         // We don't want to look at expressions that might appear in patterns or
         // types yet. We'll look into comparing those in the future. For now
         // focus on expressions appearing in other places.
         fn visit_pat(&mut self, pat: &mut P<Pat>) {
-            let _ = pat;
+            _ = pat;
         }
 
         fn visit_ty(&mut self, ty: &mut P<Ty>) {
-            let _ = ty;
+            _ = ty;
         }
 
         fn visit_attribute(&mut self, attr: &mut Attribute) {
-            let _ = attr;
+            _ = attr;
         }
     }
 
-    let mut folder = FullyParenthesize;
+    let mut folder = BracketsVisitor { failed: false };
     folder.visit_expr(&mut librustc_expr);
-    librustc_expr
+    if folder.failed {
+        None
+    } else {
+        Some(librustc_expr)
+    }
 }
 
-fn syn_parenthesize(syn_expr: syn::Expr) -> syn::Expr {
-    use syn::fold::{fold_expr, fold_generic_argument, Fold};
-    use syn::{token, BinOp, Expr, ExprParen, GenericArgument, MetaNameValue, Pat, Stmt, Type};
+/// Wrap every expression which is not already wrapped in parens with parens, to
+/// reveal the precedence of the parsed expressions, and produce a stringified
+/// form of the resulting expression.
+fn syn_brackets(syn_expr: syn::Expr) -> syn::Expr {
+    use syn::fold::{fold_expr, fold_generic_argument, fold_generic_method_argument, Fold};
+    use syn::{token, Expr, ExprParen, GenericArgument, GenericMethodArgument, Pat, Stmt, Type};
 
-    struct FullyParenthesize;
-
-    fn parenthesize(expr: Expr) -> Expr {
-        Expr::Paren(ExprParen {
-            attrs: Vec::new(),
-            expr: Box::new(expr),
-            paren_token: token::Paren::default(),
-        })
-    }
-
-    fn needs_paren(expr: &Expr) -> bool {
-        match expr {
-            Expr::Group(_) => unreachable!(),
-            Expr::If(_) | Expr::Unsafe(_) | Expr::Block(_) | Expr::Let(_) => false,
-            Expr::Binary(_) => !contains_let_chain(expr),
-            _ => true,
-        }
-    }
-
-    fn contains_let_chain(expr: &Expr) -> bool {
-        match expr {
-            Expr::Let(_) => true,
-            Expr::Binary(expr) => {
-                matches!(expr.op, BinOp::And(_))
-                    && (contains_let_chain(&expr.left) || contains_let_chain(&expr.right))
-            }
-            _ => false,
-        }
-    }
-
-    impl Fold for FullyParenthesize {
+    struct ParenthesizeEveryExpr;
+    impl Fold for ParenthesizeEveryExpr {
         fn fold_expr(&mut self, expr: Expr) -> Expr {
-            let needs_paren = needs_paren(&expr);
-            let folded = fold_expr(self, expr);
-            if needs_paren {
-                parenthesize(folded)
-            } else {
-                folded
+            match expr {
+                Expr::Group(_) => unreachable!(),
+                Expr::If(..) | Expr::Unsafe(..) | Expr::Block(..) | Expr::Let(..) => {
+                    fold_expr(self, expr)
+                }
+                _ => Expr::Paren(ExprParen {
+                    attrs: Vec::new(),
+                    expr: Box::new(fold_expr(self, expr)),
+                    paren_token: token::Paren::default(),
+                }),
             }
         }
 
@@ -439,18 +378,33 @@ fn syn_parenthesize(syn_expr: syn::Expr) -> syn::Expr {
             }
         }
 
-        fn fold_stmt(&mut self, stmt: Stmt) -> Stmt {
-            match stmt {
-                // Don't wrap toplevel expressions in statements.
-                Stmt::Expr(Expr::Verbatim(_), Some(_)) => stmt,
-                Stmt::Expr(e, semi) => Stmt::Expr(fold_expr(self, e), semi),
-                s => s,
+        fn fold_generic_method_argument(
+            &mut self,
+            arg: GenericMethodArgument,
+        ) -> GenericMethodArgument {
+            match arg {
+                GenericMethodArgument::Const(arg) => GenericMethodArgument::Const(match arg {
+                    Expr::Block(_) => fold_expr(self, arg),
+                    // Don't wrap unbraced const generic arg as that's invalid syntax.
+                    _ => arg,
+                }),
+                _ => fold_generic_method_argument(self, arg),
             }
         }
 
-        fn fold_meta_name_value(&mut self, meta: MetaNameValue) -> MetaNameValue {
-            // Don't turn #[p = "..."] into #[p = ("...")].
-            meta
+        fn fold_stmt(&mut self, stmt: Stmt) -> Stmt {
+            match stmt {
+                // Don't wrap toplevel expressions in statements.
+                Stmt::Expr(e) => Stmt::Expr(fold_expr(self, e)),
+                Stmt::Semi(e, semi) => {
+                    if let Expr::Verbatim(_) = e {
+                        Stmt::Semi(e, semi)
+                    } else {
+                        Stmt::Semi(fold_expr(self, e), semi)
+                    }
+                }
+                s => s,
+            }
         }
 
         // We don't want to look at expressions that might appear in patterns or
@@ -465,53 +419,15 @@ fn syn_parenthesize(syn_expr: syn::Expr) -> syn::Expr {
         }
     }
 
-    let mut folder = FullyParenthesize;
+    let mut folder = ParenthesizeEveryExpr;
     folder.fold_expr(syn_expr)
-}
-
-fn make_parens_invisible(expr: syn::Expr) -> syn::Expr {
-    use syn::fold::{fold_expr, fold_stmt, Fold};
-    use syn::{token, Expr, ExprGroup, ExprParen, Stmt};
-
-    struct MakeParensInvisible;
-
-    impl Fold for MakeParensInvisible {
-        fn fold_expr(&mut self, mut expr: Expr) -> Expr {
-            if let Expr::Paren(paren) = expr {
-                expr = Expr::Group(ExprGroup {
-                    attrs: paren.attrs,
-                    group_token: token::Group(paren.paren_token.span.join()),
-                    expr: paren.expr,
-                });
-            }
-            fold_expr(self, expr)
-        }
-
-        fn fold_stmt(&mut self, stmt: Stmt) -> Stmt {
-            if let Stmt::Expr(expr @ (Expr::Binary(_) | Expr::Cast(_)), None) = stmt {
-                Stmt::Expr(
-                    Expr::Paren(ExprParen {
-                        attrs: Vec::new(),
-                        paren_token: token::Paren::default(),
-                        expr: Box::new(fold_expr(self, expr)),
-                    }),
-                    None,
-                )
-            } else {
-                fold_stmt(self, stmt)
-            }
-        }
-    }
-
-    let mut folder = MakeParensInvisible;
-    folder.fold_expr(expr)
 }
 
 /// Walk through a crate collecting all expressions we can find in it.
 fn collect_exprs(file: syn::File) -> Vec<syn::Expr> {
     use syn::fold::Fold;
     use syn::punctuated::Punctuated;
-    use syn::{token, ConstParam, Expr, ExprTuple, Pat, Path};
+    use syn::{token, ConstParam, Expr, ExprTuple, Path};
 
     struct CollectExprs(Vec<Expr>);
     impl Fold for CollectExprs {
@@ -526,10 +442,6 @@ fn collect_exprs(file: syn::File) -> Vec<syn::Expr> {
                 elems: Punctuated::new(),
                 paren_token: token::Paren::default(),
             })
-        }
-
-        fn fold_pat(&mut self, pat: Pat) -> Pat {
-            pat
         }
 
         fn fold_path(&mut self, path: Path) -> Path {

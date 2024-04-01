@@ -1,4 +1,4 @@
-use crate::{version, workspace_path};
+use crate::version;
 use anyhow::{bail, Result};
 use indexmap::IndexMap;
 use quote::quote;
@@ -8,46 +8,35 @@ use std::path::{Path, PathBuf};
 use syn::parse::{Error, Parser};
 use syn::{
     parse_quote, Attribute, Data, DataEnum, DataStruct, DeriveInput, Fields, GenericArgument,
-    Ident, Item, PathArguments, TypeMacro, TypePath, TypeTuple, UseTree, Visibility,
+    Ident, Item, PathArguments, TypeMacro, TypePath, TypeTuple, Visibility,
 };
 use syn_codegen as types;
 use thiserror::Error;
 
-const SYN_CRATE_ROOT: &str = "src/lib.rs";
-const TOKEN_SRC: &str = "src/token.rs";
+const SYN_CRATE_ROOT: &str = "../src/lib.rs";
+const TOKEN_SRC: &str = "../src/token.rs";
 const IGNORED_MODS: &[&str] = &["fold", "visit", "visit_mut"];
 const EXTRA_TYPES: &[&str] = &["Lifetime"];
 
-struct Lookup {
-    items: BTreeMap<Ident, AstItem>,
-    // "+" => "Add"
-    tokens: BTreeMap<String, String>,
-    // "PatLit" => "ExprLit"
-    aliases: BTreeMap<Ident, Ident>,
-}
+// NOTE: BTreeMap is used here instead of HashMap to have deterministic output.
+type ItemLookup = BTreeMap<Ident, AstItem>;
+type TokenLookup = BTreeMap<String, String>;
 
 /// Parse the contents of `src` and return a list of AST types.
 pub fn parse() -> Result<types::Definitions> {
-    let tokens = load_token_file(TOKEN_SRC)?;
+    let mut item_lookup = BTreeMap::new();
+    load_file(SYN_CRATE_ROOT, &[], &mut item_lookup)?;
 
-    let mut lookup = Lookup {
-        items: BTreeMap::new(),
-        tokens,
-        aliases: BTreeMap::new(),
-    };
-
-    load_file(SYN_CRATE_ROOT, &[], &mut lookup)?;
+    let token_lookup = load_token_file(TOKEN_SRC)?;
 
     let version = version::get()?;
 
-    let types = lookup
-        .items
+    let types = item_lookup
         .values()
-        .map(|item| introspect_item(item, &lookup))
+        .map(|item| introspect_item(item, &item_lookup, &token_lookup))
         .collect();
 
-    let tokens = lookup
-        .tokens
+    let tokens = token_lookup
         .into_iter()
         .map(|(name, ty)| (ty, name))
         .collect();
@@ -65,23 +54,22 @@ pub struct AstItem {
     features: Vec<Attribute>,
 }
 
-fn introspect_item(item: &AstItem, lookup: &Lookup) -> types::Node {
+fn introspect_item(item: &AstItem, items: &ItemLookup, tokens: &TokenLookup) -> types::Node {
     let features = introspect_features(&item.features);
 
     match &item.ast.data {
-        Data::Enum(data) => types::Node {
+        Data::Enum(ref data) => types::Node {
             ident: item.ast.ident.to_string(),
             features,
-            data: types::Data::Enum(introspect_enum(data, lookup)),
-            exhaustive: !(is_non_exhaustive(&item.ast.attrs)
-                || data.variants.iter().any(|v| is_doc_hidden(&v.attrs))),
+            data: types::Data::Enum(introspect_enum(data, items, tokens)),
+            exhaustive: !data.variants.iter().any(|v| is_doc_hidden(&v.attrs)),
         },
-        Data::Struct(data) => types::Node {
+        Data::Struct(ref data) => types::Node {
             ident: item.ast.ident.to_string(),
             features,
             data: {
                 if data.fields.iter().all(|f| is_pub(&f.vis)) {
-                    types::Data::Struct(introspect_struct(data, lookup))
+                    types::Data::Struct(introspect_struct(data, items, tokens))
                 } else {
                     types::Data::Private
                 }
@@ -92,7 +80,7 @@ fn introspect_item(item: &AstItem, lookup: &Lookup) -> types::Node {
     }
 }
 
-fn introspect_enum(item: &DataEnum, lookup: &Lookup) -> types::Variants {
+fn introspect_enum(item: &DataEnum, items: &ItemLookup, tokens: &TokenLookup) -> types::Variants {
     item.variants
         .iter()
         .filter_map(|variant| {
@@ -103,17 +91,17 @@ fn introspect_enum(item: &DataEnum, lookup: &Lookup) -> types::Variants {
                 Fields::Unnamed(fields) => fields
                     .unnamed
                     .iter()
-                    .map(|field| introspect_type(&field.ty, lookup))
+                    .map(|field| introspect_type(&field.ty, items, tokens))
                     .collect(),
                 Fields::Unit => vec![],
-                Fields::Named(_) => panic!("Enum representation not supported"),
+                _ => panic!("Enum representation not supported"),
             };
             Some((variant.ident.to_string(), fields))
         })
         .collect()
 }
 
-fn introspect_struct(item: &DataStruct, lookup: &Lookup) -> types::Fields {
+fn introspect_struct(item: &DataStruct, items: &ItemLookup, tokens: &TokenLookup) -> types::Fields {
     match &item.fields {
         Fields::Named(fields) => fields
             .named
@@ -121,71 +109,74 @@ fn introspect_struct(item: &DataStruct, lookup: &Lookup) -> types::Fields {
             .map(|field| {
                 (
                     field.ident.as_ref().unwrap().to_string(),
-                    introspect_type(&field.ty, lookup),
+                    introspect_type(&field.ty, items, tokens),
                 )
             })
             .collect(),
         Fields::Unit => IndexMap::new(),
-        Fields::Unnamed(_) => panic!("Struct representation not supported"),
+        _ => panic!("Struct representation not supported"),
     }
 }
 
-fn introspect_type(item: &syn::Type, lookup: &Lookup) -> types::Type {
+fn introspect_type(item: &syn::Type, items: &ItemLookup, tokens: &TokenLookup) -> types::Type {
     match item {
-        syn::Type::Path(TypePath { qself: None, path }) => {
+        syn::Type::Path(TypePath {
+            qself: None,
+            ref path,
+        }) => {
             let last = path.segments.last().unwrap();
             let string = last.ident.to_string();
 
             match string.as_str() {
                 "Option" => {
-                    let nested = introspect_type(first_arg(&last.arguments), lookup);
+                    let nested = introspect_type(first_arg(&last.arguments), items, tokens);
                     types::Type::Option(Box::new(nested))
                 }
                 "Punctuated" => {
-                    let nested = introspect_type(first_arg(&last.arguments), lookup);
-                    let types::Type::Token(punct) =
-                        introspect_type(last_arg(&last.arguments), lookup)
-                    else {
-                        panic!()
+                    let nested = introspect_type(first_arg(&last.arguments), items, tokens);
+                    let punct = match introspect_type(last_arg(&last.arguments), items, tokens) {
+                        types::Type::Token(s) => s,
+                        _ => panic!(),
                     };
+
                     types::Type::Punctuated(types::Punctuated {
                         element: Box::new(nested),
                         punct,
                     })
                 }
                 "Vec" => {
-                    let nested = introspect_type(first_arg(&last.arguments), lookup);
+                    let nested = introspect_type(first_arg(&last.arguments), items, tokens);
                     types::Type::Vec(Box::new(nested))
                 }
                 "Box" => {
-                    let nested = introspect_type(first_arg(&last.arguments), lookup);
+                    let nested = introspect_type(first_arg(&last.arguments), items, tokens);
                     types::Type::Box(Box::new(nested))
                 }
                 "Brace" | "Bracket" | "Paren" | "Group" => types::Type::Group(string),
                 "TokenStream" | "Literal" | "Ident" | "Span" => types::Type::Ext(string),
                 "String" | "u32" | "usize" | "bool" => types::Type::Std(string),
+                "Await" => types::Type::Token("Await".to_string()),
                 _ => {
-                    let mut resolved = &last.ident;
-                    while let Some(alias) = lookup.aliases.get(resolved) {
-                        resolved = alias;
-                    }
-                    if lookup.items.get(resolved).is_some() {
-                        types::Type::Syn(resolved.to_string())
+                    if items.get(&last.ident).is_some() || last.ident == "Reserved" {
+                        types::Type::Syn(string)
                     } else {
-                        unimplemented!("{}", resolved);
+                        unimplemented!("{}", string);
                     }
                 }
             }
         }
-        syn::Type::Tuple(TypeTuple { elems, .. }) => {
-            let tys = elems.iter().map(|ty| introspect_type(ty, lookup)).collect();
+        syn::Type::Tuple(TypeTuple { ref elems, .. }) => {
+            let tys = elems
+                .iter()
+                .map(|ty| introspect_type(&ty, items, tokens))
+                .collect();
             types::Type::Tuple(tys)
         }
-        syn::Type::Macro(TypeMacro { mac })
+        syn::Type::Macro(TypeMacro { ref mac })
             if mac.path.segments.last().unwrap().ident == "Token" =>
         {
             let content = mac.tokens.to_string();
-            let ty = lookup.tokens.get(&content).unwrap().to_string();
+            let ty = tokens.get(&content).unwrap().to_string();
 
             types::Type::Token(ty)
         }
@@ -197,11 +188,11 @@ fn introspect_features(attrs: &[Attribute]) -> types::Features {
     let mut ret = types::Features::default();
 
     for attr in attrs {
-        if !attr.path().is_ident("cfg") {
+        if !attr.path.is_ident("cfg") {
             continue;
         }
 
-        let features = attr.parse_args_with(parsing::parse_features).unwrap();
+        let features = parsing::parse_features.parse2(attr.tokens.clone()).unwrap();
 
         if ret.any.is_empty() {
             ret = features;
@@ -223,65 +214,60 @@ fn is_pub(vis: &Visibility) -> bool {
     }
 }
 
-fn is_non_exhaustive(attrs: &[Attribute]) -> bool {
-    for attr in attrs {
-        if attr.path().is_ident("non_exhaustive") {
-            return true;
-        }
-    }
-    false
-}
-
 fn is_doc_hidden(attrs: &[Attribute]) -> bool {
     for attr in attrs {
-        if attr.path().is_ident("doc") && attr.parse_args::<parsing::kw::hidden>().is_ok() {
-            return true;
+        if attr.path.is_ident("doc") {
+            if parsing::parse_doc_hidden_attr
+                .parse2(attr.tokens.clone())
+                .is_ok()
+            {
+                return true;
+            }
         }
     }
     false
 }
 
 fn first_arg(params: &PathArguments) -> &syn::Type {
-    let data = match params {
-        PathArguments::AngleBracketed(data) => data,
+    let data = match *params {
+        PathArguments::AngleBracketed(ref data) => data,
         _ => panic!("Expected at least 1 type argument here"),
     };
 
-    match data
+    match *data
         .args
         .first()
         .expect("Expected at least 1 type argument here")
     {
-        GenericArgument::Type(ty) => ty,
+        GenericArgument::Type(ref ty) => ty,
         _ => panic!("Expected at least 1 type argument here"),
     }
 }
 
 fn last_arg(params: &PathArguments) -> &syn::Type {
-    let data = match params {
-        PathArguments::AngleBracketed(data) => data,
+    let data = match *params {
+        PathArguments::AngleBracketed(ref data) => data,
         _ => panic!("Expected at least 1 type argument here"),
     };
 
-    match data
+    match *data
         .args
         .last()
         .expect("Expected at least 1 type argument here")
     {
-        GenericArgument::Type(ty) => ty,
+        GenericArgument::Type(ref ty) => ty,
         _ => panic!("Expected at least 1 type argument here"),
     }
 }
 
 mod parsing {
-    use super::AstItem;
-    use proc_macro2::TokenStream;
+    use super::{AstItem, TokenLookup};
+    use proc_macro2::{TokenStream, TokenTree};
     use quote::quote;
     use std::collections::{BTreeMap, BTreeSet};
-    use syn::parse::{ParseStream, Result};
+    use syn::parse::{ParseStream, Parser, Result};
     use syn::{
-        braced, bracketed, parenthesized, parse_quote, token, Attribute, Expr, Ident, Lit, LitStr,
-        Path, Token,
+        braced, bracketed, parenthesized, parse_quote, token, Attribute, Ident, LitStr, Path, Token,
     };
     use syn_codegen as types;
 
@@ -327,18 +313,32 @@ mod parsing {
         Ok(res)
     }
 
-    pub fn ast_enum(input: ParseStream) -> Result<AstItem> {
-        let attrs = input.call(Attribute::parse_outer)?;
+    fn no_visit(input: ParseStream) -> bool {
+        if peek_tag(input, "no_visit") {
+            input.parse::<Token![#]>().unwrap();
+            input.parse::<Ident>().unwrap();
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn ast_enum(input: ParseStream) -> Result<Option<AstItem>> {
+        input.call(Attribute::parse_outer)?;
         input.parse::<Token![pub]>()?;
         input.parse::<Token![enum]>()?;
         let ident: Ident = input.parse()?;
+        let no_visit = no_visit(input);
         let rest: TokenStream = input.parse()?;
-        Ok(AstItem {
-            ast: syn::parse2(quote! {
-                #(#attrs)*
-                pub enum #ident #rest
-            })?,
-            features: vec![],
+        Ok(if no_visit {
+            None
+        } else {
+            Some(AstItem {
+                ast: syn::parse2(quote! {
+                    pub enum #ident #rest
+                })?,
+                features: vec![],
+            })
         })
     }
 
@@ -368,7 +368,7 @@ mod parsing {
     }
 
     pub fn ast_enum_of_structs(input: ParseStream) -> Result<AstItem> {
-        let attrs = input.call(Attribute::parse_outer)?;
+        input.call(Attribute::parse_outer)?;
         input.parse::<Token![pub]>()?;
         input.parse::<Token![enum]>()?;
         let ident: Ident = input.parse()?;
@@ -380,18 +380,20 @@ mod parsing {
             variants.push(content.call(eos_variant)?);
         }
 
+        if let Some(ident) = input.parse::<Option<Ident>>()? {
+            assert_eq!(ident, "do_not_generate_to_tokens");
+        }
+
         let enum_item = {
             let variants = variants.iter().map(|v| {
                 let attrs = &v.attrs;
                 let name = &v.name;
-                if let Some(member) = &v.member {
-                    quote!(#(#attrs)* #name(#member))
-                } else {
-                    quote!(#(#attrs)* #name)
+                match v.member {
+                    Some(ref member) => quote!(#(#attrs)* #name(#member)),
+                    None => quote!(#(#attrs)* #name),
                 }
             });
             parse_quote! {
-                #(#attrs)*
                 pub enum #ident {
                     #(#variants),*
                 }
@@ -403,26 +405,47 @@ mod parsing {
         })
     }
 
-    pub mod kw {
+    mod kw {
         syn::custom_keyword!(hidden);
         syn::custom_keyword!(macro_rules);
         syn::custom_keyword!(Token);
     }
 
-    pub fn parse_token_macro(input: ParseStream) -> Result<BTreeMap<String, String>> {
+    pub fn parse_token_macro(input: ParseStream) -> Result<TokenLookup> {
+        input.parse::<TokenTree>()?;
+        input.parse::<Token![=>]>()?;
+
+        let definition;
+        braced!(definition in input);
+        definition.call(Attribute::parse_outer)?;
+        definition.parse::<kw::macro_rules>()?;
+        definition.parse::<Token![!]>()?;
+        definition.parse::<kw::Token>()?;
+
+        let rules;
+        braced!(rules in definition);
+        input.parse::<Token![;]>()?;
+
         let mut tokens = BTreeMap::new();
-        while !input.is_empty() {
-            let pattern;
-            bracketed!(pattern in input);
-            let token = pattern.parse::<TokenStream>()?.to_string();
-            input.parse::<Token![=>]>()?;
-            let expansion;
-            braced!(expansion in input);
-            input.parse::<Token![;]>()?;
-            expansion.parse::<Token![$]>()?;
-            let path: Path = expansion.parse()?;
-            let ty = path.segments.last().unwrap().ident.to_string();
-            tokens.insert(token, ty.to_string());
+        while !rules.is_empty() {
+            if rules.peek(Token![$]) {
+                rules.parse::<Token![$]>()?;
+                rules.parse::<TokenTree>()?;
+                rules.parse::<Token![*]>()?;
+                tokens.insert("await".to_owned(), "Await".to_owned());
+            } else {
+                let pattern;
+                bracketed!(pattern in rules);
+                let token = pattern.parse::<TokenStream>()?.to_string();
+                rules.parse::<Token![=>]>()?;
+                let expansion;
+                braced!(expansion in rules);
+                rules.parse::<Token![;]>()?;
+                expansion.parse::<Token![$]>()?;
+                let path: Path = expansion.parse()?;
+                let ty = path.segments.last().unwrap().ident.to_string();
+                tokens.insert(token, ty.to_string());
+            }
         }
         Ok(tokens)
     }
@@ -440,42 +463,55 @@ mod parsing {
     pub fn parse_features(input: ParseStream) -> Result<types::Features> {
         let mut features = BTreeSet::new();
 
-        let i: Ident = input.fork().parse()?;
+        let level_1;
+        parenthesized!(level_1 in input);
+
+        let i: Ident = level_1.fork().parse()?;
 
         if i == "any" {
-            input.parse::<Ident>()?;
+            level_1.parse::<Ident>()?;
 
-            let nested;
-            parenthesized!(nested in input);
+            let level_2;
+            parenthesized!(level_2 in level_1);
 
-            while !nested.is_empty() {
-                features.insert(parse_feature(&nested)?);
+            while !level_2.is_empty() {
+                features.insert(parse_feature(&level_2)?);
 
-                if !nested.is_empty() {
-                    nested.parse::<Token![,]>()?;
+                if !level_2.is_empty() {
+                    level_2.parse::<Token![,]>()?;
                 }
             }
         } else if i == "feature" {
-            features.insert(parse_feature(input)?);
-            assert!(input.is_empty());
+            features.insert(parse_feature(&level_1)?);
+            assert!(level_1.is_empty());
         } else {
             panic!("{:?}", i);
         }
 
+        assert!(input.is_empty());
+
         Ok(types::Features { any: features })
     }
 
-    pub fn path_attr(attrs: &[Attribute]) -> Result<Option<&LitStr>> {
+    pub fn path_attr(attrs: &[Attribute]) -> Result<Option<LitStr>> {
         for attr in attrs {
-            if attr.path().is_ident("path") {
-                if let Expr::Lit(expr) = &attr.meta.require_name_value()?.value {
-                    if let Lit::Str(lit) = &expr.lit {
-                        return Ok(Some(lit));
-                    }
+            if attr.path.is_ident("path") {
+                fn parser(input: ParseStream) -> Result<LitStr> {
+                    input.parse::<Token![=]>()?;
+                    input.parse()
                 }
+                let filename = parser.parse2(attr.tokens.clone())?;
+                return Ok(Some(filename));
             }
         }
         Ok(None)
+    }
+
+    pub fn parse_doc_hidden_attr(input: ParseStream) -> Result<()> {
+        let content;
+        parenthesized!(content in input);
+        content.parse::<kw::hidden>()?;
+        Ok(())
     }
 }
 
@@ -487,7 +523,7 @@ fn get_features(attrs: &[Attribute], base: &[Attribute]) -> Vec<Attribute> {
     let mut ret = clone_features(base);
 
     for attr in attrs {
-        if attr.path().is_ident("cfg") {
+        if attr.path.is_ident("cfg") {
             ret.push(parse_quote!(#attr));
         }
     }
@@ -504,12 +540,12 @@ struct LoadFileError {
     error: Error,
 }
 
-fn load_file(
-    relative_to_workspace_root: impl AsRef<Path>,
+fn load_file<P: AsRef<Path>>(
+    name: P,
     features: &[Attribute],
-    lookup: &mut Lookup,
+    lookup: &mut ItemLookup,
 ) -> Result<()> {
-    let error = match do_load_file(&relative_to_workspace_root, features, lookup).err() {
+    let error = match do_load_file(&name, features, lookup).err() {
         None => return Ok(()),
         Some(error) => error,
     };
@@ -518,23 +554,23 @@ fn load_file(
     let span = error.span().start();
 
     bail!(LoadFileError {
-        path: relative_to_workspace_root.as_ref().to_owned(),
+        path: name.as_ref().to_owned(),
         line: span.line,
         column: span.column + 1,
         error,
     })
 }
 
-fn do_load_file(
-    relative_to_workspace_root: impl AsRef<Path>,
+fn do_load_file<P: AsRef<Path>>(
+    name: P,
     features: &[Attribute],
-    lookup: &mut Lookup,
+    lookup: &mut ItemLookup,
 ) -> Result<()> {
-    let relative_to_workspace_root = relative_to_workspace_root.as_ref();
-    let parent = relative_to_workspace_root.parent().expect("no parent path");
+    let name = name.as_ref();
+    let parent = name.parent().expect("no parent path");
 
     // Parse the file
-    let src = fs::read_to_string(workspace_path::get(relative_to_workspace_root))?;
+    let src = fs::read_to_string(name)?;
     let file = syn::parse_file(&src)?;
 
     // Collect all of the interesting AstItems declared in this file or submodules.
@@ -567,10 +603,9 @@ fn do_load_file(
 
                 // Look up the submodule file, and recursively parse it.
                 // Only handles same-directory .rs file submodules for now.
-                let filename = if let Some(filename) = parsing::path_attr(&item.attrs)? {
-                    filename.value()
-                } else {
-                    format!("{}.rs", item.ident)
+                let filename = match parsing::path_attr(&item.attrs)? {
+                    Some(filename) => filename.value(),
+                    None => format!("{}.rs", item.ident),
                 };
                 let path = parent.join(filename);
                 load_file(path, &features, lookup)?;
@@ -582,24 +617,28 @@ fn do_load_file(
 
                 // Try to parse the AstItem declaration out of the item.
                 let tts = item.mac.tokens.clone();
-                let mut found = if item.mac.path.is_ident("ast_struct") {
-                    parsing::ast_struct.parse2(tts)
+                let found = if item.mac.path.is_ident("ast_struct") {
+                    Some(parsing::ast_struct.parse2(tts)?)
                 } else if item.mac.path.is_ident("ast_enum") {
-                    parsing::ast_enum.parse2(tts)
+                    parsing::ast_enum.parse2(tts)?
                 } else if item.mac.path.is_ident("ast_enum_of_structs") {
-                    parsing::ast_enum_of_structs.parse2(tts)
+                    Some(parsing::ast_enum_of_structs.parse2(tts)?)
                 } else {
                     continue;
-                }?;
+                };
 
                 // Record our features on the parsed AstItems.
-                found.features.extend(clone_features(&features));
-                lookup.items.insert(found.ast.ident.clone(), found);
+                if let Some(mut item) = found {
+                    if item.ast.ident != "Reserved" {
+                        item.features.extend(clone_features(&features));
+                        lookup.insert(item.ast.ident.clone(), item);
+                    }
+                }
             }
             Item::Struct(item) => {
                 let ident = item.ident;
                 if EXTRA_TYPES.contains(&&ident.to_string()[..]) {
-                    lookup.items.insert(
+                    lookup.insert(
                         ident.clone(),
                         AstItem {
                             ast: DeriveInput {
@@ -618,43 +657,20 @@ fn do_load_file(
                     );
                 }
             }
-            Item::Use(item)
-                if relative_to_workspace_root == Path::new(SYN_CRATE_ROOT)
-                    && matches!(item.vis, Visibility::Public(_)) =>
-            {
-                load_aliases(item.tree, lookup);
-            }
             _ => {}
         }
     }
     Ok(())
 }
 
-fn load_aliases(use_tree: UseTree, lookup: &mut Lookup) {
-    match use_tree {
-        UseTree::Path(use_tree) => load_aliases(*use_tree.tree, lookup),
-        UseTree::Rename(use_tree) => {
-            lookup.aliases.insert(use_tree.rename, use_tree.ident);
-        }
-        UseTree::Group(use_tree) => {
-            for use_tree in use_tree.items {
-                load_aliases(use_tree, lookup);
-            }
-        }
-        UseTree::Name(_) | UseTree::Glob(_) => {}
-    }
-}
-
-fn load_token_file(
-    relative_to_workspace_root: impl AsRef<Path>,
-) -> Result<BTreeMap<String, String>> {
-    let path = workspace_path::get(relative_to_workspace_root);
-    let src = fs::read_to_string(path)?;
+fn load_token_file<P: AsRef<Path>>(name: P) -> Result<TokenLookup> {
+    let name = name.as_ref();
+    let src = fs::read_to_string(name)?;
     let file = syn::parse_file(&src)?;
     for item in file.items {
         if let Item::Macro(item) = item {
             match item.ident {
-                Some(i) if i == "Token" => {}
+                Some(ref i) if i == "export_token_macro" => {}
                 _ => continue,
             }
             let tokens = item.mac.parse_body_with(parsing::parse_token_macro)?;
