@@ -4,10 +4,11 @@ use proc_macro2::{Ident, Span, TokenStream};
 use quote::{format_ident, quote};
 use syn_codegen::{Data, Definitions, Node, Type};
 
-const HASH_SRC: &str = "src/gen/hash.rs";
+const DEBUG_SRC: &str = "../src/gen/hash.rs";
 
 fn skip(field_type: &Type) -> bool {
     match field_type {
+        Type::Syn(node) => node == "Reserved",
         Type::Ext(ty) => ty == "Span",
         Type::Token(_) | Type::Group(_) => true,
         Type::Box(inner) => skip(inner),
@@ -21,13 +22,12 @@ fn expand_impl_body(defs: &Definitions, node: &Node) -> TokenStream {
     let ident = Ident::new(type_name, Span::call_site());
 
     match &node.data {
-        Data::Enum(variants) if variants.is_empty() => quote!(match *self {}),
         Data::Enum(variants) => {
             let arms = variants
                 .iter()
                 .enumerate()
                 .map(|(i, (variant_name, fields))| {
-                    let i = u8::try_from(i).unwrap();
+                    let i = i as u8;
                     let variant = Ident::new(variant_name, Span::call_site());
                     if fields.is_empty() {
                         quote! {
@@ -76,13 +76,18 @@ fn expand_impl_body(defs: &Definitions, node: &Node) -> TokenStream {
                         }
                     }
                 });
-            let nonexhaustive = if node.ident == "Expr" {
+            let nonexhaustive = if node.exhaustive {
+                None
+            } else if node.ident == "Expr" {
                 Some(quote! {
-                    #[cfg(not(feature = "full"))]
+                    #[cfg(any(syn_no_non_exhaustive, not(feature = "full")))]
                     _ => unreachable!(),
                 })
             } else {
-                None
+                Some(quote! {
+                    #[cfg(syn_no_non_exhaustive)]
+                    _ => unreachable!(),
+                })
             };
             quote! {
                 match self {
@@ -123,20 +128,20 @@ fn expand_impl(defs: &Definitions, node: &Node) -> TokenStream {
     }
 
     let ident = Ident::new(&node.ident, Span::call_site());
-    let cfg_features = cfg::features(&node.features, "extra-traits");
+    let cfg_features = cfg::features(&node.features);
 
     let body = expand_impl_body(defs, node);
-
-    let hasher = match &node.data {
-        Data::Struct(_) if body.is_empty() => quote!(_state),
-        Data::Enum(variants) if variants.is_empty() => quote!(_state),
-        _ => quote!(state),
+    let state = if body.is_empty() {
+        quote!(_state)
+    } else {
+        quote!(state)
     };
 
     quote! {
         #cfg_features
+        #[cfg_attr(doc_cfg, doc(cfg(feature = "extra-traits")))]
         impl Hash for #ident {
-            fn hash<H>(&self, #hasher: &mut H)
+            fn hash<H>(&self, #state: &mut H)
             where
                 H: Hasher,
             {
@@ -153,7 +158,7 @@ pub fn generate(defs: &Definitions) -> Result<()> {
     }
 
     file::write(
-        HASH_SRC,
+        DEBUG_SRC,
         quote! {
             #[cfg(any(feature = "derive", feature = "full"))]
             use crate::tt::TokenStreamHelper;

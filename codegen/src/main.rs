@@ -9,14 +9,7 @@
 // Finally this crate generates the Visit, VisitMut, and Fold traits in Syn
 // programmatically from the syntax tree description.
 
-#![allow(
-    clippy::items_after_statements,
-    clippy::manual_let_else,
-    clippy::match_like_matches_macro,
-    clippy::similar_names,
-    clippy::too_many_lines,
-    clippy::uninlined_format_args
-)]
+#![allow(clippy::needless_pass_by_value)]
 
 mod cfg;
 mod clone;
@@ -35,7 +28,6 @@ mod snapshot;
 mod version;
 mod visit;
 mod visit_mut;
-mod workspace_path;
 
 fn main() -> anyhow::Result<()> {
     color_backtrace::install();

@@ -12,7 +12,7 @@ fn immediate_fail(_input: ParseStream) -> syn::Result<()> {
 fuzz_target!(|data: &[u8]| {
     if data.len() < 300 {
         if let Ok(string) = str::from_utf8(data) {
-            let _ = immediate_fail.parse_str(string);
+            _ = immediate_fail.parse_str(string);
         }
     }
 });
