@@ -4,10 +4,11 @@ use proc_macro2::{Ident, Span, TokenStream};
 use quote::{format_ident, quote};
 use syn_codegen::{Data, Definitions, Node, Type};
 
-const EQ_SRC: &str = "src/gen/eq.rs";
+const DEBUG_SRC: &str = "../src/gen/eq.rs";
 
 fn always_eq(field_type: &Type) -> bool {
     match field_type {
+        Type::Syn(node) => node == "Reserved",
         Type::Ext(ty) => ty == "Span",
         Type::Token(_) | Type::Group(_) => true,
         Type::Box(inner) => always_eq(inner),
@@ -21,7 +22,6 @@ fn expand_impl_body(defs: &Definitions, node: &Node) -> TokenStream {
     let ident = Ident::new(type_name, Span::call_site());
 
     match &node.data {
-        Data::Enum(variants) if variants.is_empty() => quote!(match *self {}),
         Data::Enum(variants) => {
             let arms = variants.iter().map(|(variant_name, fields)| {
                 let variant = Ident::new(variant_name, Span::call_site());
@@ -72,15 +72,10 @@ fn expand_impl_body(defs: &Definitions, node: &Node) -> TokenStream {
                     }
                 }
             });
-            let fallthrough = if variants.len() == 1 {
-                None
-            } else {
-                Some(quote!(_ => false,))
-            };
             quote! {
                 match (self, other) {
                     #(#arms)*
-                    #fallthrough
+                    _ => false,
                 }
             }
         }
@@ -114,10 +109,11 @@ fn expand_impl(defs: &Definitions, node: &Node) -> TokenStream {
     }
 
     let ident = Ident::new(&node.ident, Span::call_site());
-    let cfg_features = cfg::features(&node.features, "extra-traits");
+    let cfg_features = cfg::features(&node.features);
 
     let eq = quote! {
         #cfg_features
+        #[cfg_attr(doc_cfg, doc(cfg(feature = "extra-traits")))]
         impl Eq for #ident {}
     };
 
@@ -127,16 +123,17 @@ fn expand_impl(defs: &Definitions, node: &Node) -> TokenStream {
     }
 
     let body = expand_impl_body(defs, node);
-    let other = match &node.data {
-        Data::Enum(variants) if variants.is_empty() => quote!(_other),
-        Data::Struct(fields) if fields.values().all(always_eq) => quote!(_other),
-        _ => quote!(other),
+    let other = if body.to_string() == "true" {
+        quote!(_other)
+    } else {
+        quote!(other)
     };
 
     quote! {
         #eq
 
         #cfg_features
+        #[cfg_attr(doc_cfg, doc(cfg(feature = "extra-traits")))]
         impl PartialEq for #ident {
             fn eq(&self, #other: &Self) -> bool {
                 #body
@@ -152,7 +149,7 @@ pub fn generate(defs: &Definitions) -> Result<()> {
     }
 
     file::write(
-        EQ_SRC,
+        DEBUG_SRC,
         quote! {
             #[cfg(any(feature = "derive", feature = "full"))]
             use crate::tt::TokenStreamHelper;
