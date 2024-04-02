@@ -3,7 +3,7 @@
     "Name": "syn",
     "License": "Apache License V2.0, MIT",
     "License File": "LICENSE-APACHE, LICENSE-MIT",
-    "Version Number": "1.0.107",
+    "Version Number": "2.0.48",
     "Owner": "fangting12@huawei.com",
     "Upstream URL": "https://github.com/dtolnay/syn",
     "Description": "A Rust library that provides support for parsing Rust code."

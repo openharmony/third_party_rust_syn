@@ -5,7 +5,7 @@ use quote::{format_ident, quote};
 use syn::Index;
 use syn_codegen::{Data, Definitions, Features, Node, Type};
 
-const FOLD_SRC: &str = "../src/gen/fold.rs";
+const FOLD_SRC: &str = "src/gen/fold.rs";
 
 fn simple_visit(item: &str, name: &TokenStream) -> TokenStream {
     let ident = gen::under_name(item);
@@ -62,29 +62,6 @@ fn visit(
                 (#code)
             })
         }
-        Type::Token(t) => {
-            let repr = &defs.tokens[t];
-            let is_keyword = repr.chars().next().unwrap().is_alphabetic();
-            let spans = if is_keyword {
-                quote!(span)
-            } else {
-                quote!(spans)
-            };
-            let ty = if repr == "await" {
-                quote!(crate::token::Await)
-            } else {
-                syn::parse_str(&format!("Token![{}]", repr)).unwrap()
-            };
-            Some(quote! {
-                #ty(tokens_helper(f, &#name.#spans))
-            })
-        }
-        Type::Group(t) => {
-            let ty = Ident::new(t, Span::call_site());
-            Some(quote! {
-                #ty(tokens_helper(f, &#name.span))
-            })
-        }
         Type::Syn(t) => {
             fn requires_full(features: &Features) -> bool {
                 features.any.contains("full") && features.any.len() == 1
@@ -97,7 +74,7 @@ fn visit(
             Some(res)
         }
         Type::Ext(t) if gen::TERMINAL_TYPES.contains(&&t[..]) => Some(simple_visit(t, name)),
-        Type::Ext(_) | Type::Std(_) => None,
+        Type::Ext(_) | Type::Std(_) | Type::Token(_) | Type::Group(_) => None,
     }
 }
 
@@ -151,19 +128,9 @@ fn node(traits: &mut TokenStream, impls: &mut TokenStream, s: &Node, defs: &Defi
                 }
             }
 
-            let nonexhaustive = if s.exhaustive {
-                None
-            } else {
-                Some(quote! {
-                    #[cfg(syn_no_non_exhaustive)]
-                    _ => unreachable!(),
-                })
-            };
-
             fold_impl.extend(quote! {
                 match node {
                     #fold_variants
-                    #nonexhaustive
                 }
             });
         }
@@ -171,32 +138,17 @@ fn node(traits: &mut TokenStream, impls: &mut TokenStream, s: &Node, defs: &Defi
             let mut fold_fields = TokenStream::new();
 
             for (field, ty) in fields {
-                let id = Ident::new(&field, Span::call_site());
+                let id = Ident::new(field, Span::call_site());
                 let ref_toks = quote!(node.#id);
 
-                if let Type::Syn(ty) = ty {
-                    if ty == "Reserved" {
-                        fold_fields.extend(quote! {
-                            #id: #ref_toks,
-                        });
-                        continue;
-                    }
-                }
-
-                let fold = visit(&ty, &s.features, defs, &ref_toks).unwrap_or(ref_toks);
+                let fold = visit(ty, &s.features, defs, &ref_toks).unwrap_or(ref_toks);
 
                 fold_fields.extend(quote! {
                     #id: #fold,
                 });
             }
 
-            if !fields.is_empty() {
-                fold_impl.extend(quote! {
-                    #ty {
-                        #fold_fields
-                    }
-                })
-            } else {
+            if fields.is_empty() {
                 if ty == "Ident" {
                     fold_impl.extend(quote! {
                         let mut node = node;
@@ -206,6 +158,12 @@ fn node(traits: &mut TokenStream, impls: &mut TokenStream, s: &Node, defs: &Defi
                 }
                 fold_impl.extend(quote! {
                     node
+                });
+            } else {
+                fold_impl.extend(quote! {
+                    #ty {
+                        #fold_fields
+                    }
                 });
             }
         }
@@ -258,12 +216,14 @@ pub fn generate(defs: &Definitions) -> Result<()> {
         quote! {
             // Unreachable code is generated sometimes without the full feature.
             #![allow(unreachable_code, unused_variables)]
-            #![allow(clippy::match_wildcard_for_single_variants)]
+            #![allow(
+                clippy::match_wildcard_for_single_variants,
+                clippy::needless_match,
+                clippy::needless_pass_by_ref_mut,
+            )]
 
             #[cfg(any(feature = "full", feature = "derive"))]
             use crate::gen::helper::fold::*;
-            #[cfg(any(feature = "full", feature = "derive"))]
-            use crate::token::{Brace, Bracket, Group, Paren};
             use crate::*;
             use proc_macro2::Span;
 
@@ -274,8 +234,6 @@ pub fn generate(defs: &Definitions) -> Result<()> {
             /// See the [module documentation] for details.
             ///
             /// [module documentation]: self
-            ///
-            /// *This trait is available only if Syn is built with the `"fold"` feature.*
             pub trait Fold {
                 #traits
             }

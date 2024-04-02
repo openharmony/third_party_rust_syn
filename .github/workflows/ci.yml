@@ -3,6 +3,7 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
   schedule: [cron: "40 1 * * *"]
 
 permissions:
@@ -12,24 +13,31 @@ env:
   RUSTFLAGS: -Dwarnings
 
 jobs:
+  pre_ci:
+    uses: dtolnay/.github/.github/workflows/pre_ci.yml@master
+
   test:
     name: Tests
+    needs: pre_ci
+    if: needs.pre_ci.outputs.continue
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
         with:
-          components: rustc-dev
+          components: llvm-tools, rustc-dev
       - run: cargo test --all-features --release --tests
 
   build:
     name: ${{matrix.name || format('Rust {0}', matrix.rust)}}
+    needs: pre_ci
+    if: needs.pre_ci.outputs.continue
     runs-on: ${{matrix.os || 'ubuntu'}}-latest
     strategy:
       fail-fast: false
       matrix:
-        rust: [stable, beta, 1.31.0]
+        rust: [stable, beta, 1.56.0]
         include:
           - rust: nightly
             components: rustc-dev
@@ -46,7 +54,7 @@ jobs:
       target: ${{matrix.target && format('--target={0}', matrix.target)}}
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{matrix.rust}}
@@ -72,65 +80,80 @@ jobs:
 
   examples:
     name: Examples
+    needs: pre_ci
+    if: needs.pre_ci.outputs.continue
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
       - run: cargo check --manifest-path examples/dump-syntax/Cargo.toml
       - run: cargo check --manifest-path examples/heapsize/example/Cargo.toml
       - run: cargo check --manifest-path examples/lazy-static/example/Cargo.toml
       - run: cargo check --manifest-path examples/trace-var/example/Cargo.toml
 
-  docs:
-    name: Docs
+  doc:
+    name: Documentation
+    needs: pre_ci
+    if: needs.pre_ci.outputs.continue
     runs-on: ubuntu-latest
-    env:
-      RUSTDOCFLAGS: --cfg=doc_cfg -Dbroken_intra_doc_links
     timeout-minutes: 45
+    env:
+      RUSTDOCFLAGS: -Dwarnings
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/install@cargo-docs-rs
+      - run: cargo docs-rs
+      - run: cargo docs-rs --manifest-path json/Cargo.toml
       - run: cargo test --all-features --doc
-      - run: cargo doc --all-features
 
   codegen:
     name: Codegen
+    needs: pre_ci
+    if: needs.pre_ci.outputs.continue
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cd codegen && cargo run
+      - run: cargo run --manifest-path codegen/Cargo.toml
       - run: git diff --exit-code
 
-  msrv:
+  minimal:
     name: Minimal versions
+    needs: pre_ci
+    if: needs.pre_ci.outputs.continue
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
-      - run: cargo update -Z minimal-versions
-      - run: cargo check --all-features
+      - run: cargo generate-lockfile -Z minimal-versions
+      - run: cargo check --all-features --locked
 
   fuzz:
     name: Fuzz
+    needs: pre_ci
+    if: needs.pre_ci.outputs.continue
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
       - uses: dtolnay/install@cargo-fuzz
-      - run: cargo fuzz build -O
+      - run: cargo fuzz check
 
   miri:
     name: Miri
+    needs: pre_ci
+    if: needs.pre_ci.outputs.continue
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@miri
+      - run: cargo miri setup
       - run: cargo miri test --all-features
         env:
           MIRIFLAGS: -Zmiri-strict-provenance
@@ -141,11 +164,12 @@ jobs:
     if: github.event_name != 'pull_request'
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: clippy,rustc-dev
       - run: cargo clippy --all-features --tests --benches -- -Dclippy::all -Dclippy::pedantic
+      - run: cargo clippy --manifest-path codegen/Cargo.toml -- -Dclippy::all -Dclippy::pedantic
 
   outdated:
     name: Outdated
@@ -153,7 +177,7 @@ jobs:
     if: github.event_name != 'pull_request'
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: dtolnay/install@cargo-outdated
       - run: cargo outdated --workspace --exit-code 1
       - run: cargo outdated --manifest-path fuzz/Cargo.toml --exit-code 1
