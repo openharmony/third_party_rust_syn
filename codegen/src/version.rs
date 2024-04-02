@@ -1,11 +1,12 @@
-use crate::workspace_path;
 use anyhow::Result;
 use semver::Version;
-use serde_derive::Deserialize;
+use serde::Deserialize;
 use std::fs;
+use std::path::Path;
 
 pub fn get() -> Result<Version> {
-    let syn_cargo_toml = workspace_path::get("Cargo.toml");
+    let codegen_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let syn_cargo_toml = codegen_root.join("../Cargo.toml");
     let manifest = fs::read_to_string(syn_cargo_toml)?;
     let parsed: Manifest = toml::from_str(&manifest)?;
     Ok(parsed.package.version)

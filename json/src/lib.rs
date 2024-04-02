@@ -13,9 +13,9 @@
 //!   of the [`visit`], [`visit_mut`], and [`fold`] modules can be generated
 //!   programmatically from a description of the syntax tree.
 //!
-//!   [`visit`]: https://docs.rs/syn/2.0/syn/visit/index.html
-//!   [`visit_mut`]: https://docs.rs/syn/2.0/syn/visit_mut/index.html
-//!   [`fold`]: https://docs.rs/syn/2.0/syn/fold/index.html
+//!   [`visit`]: https://docs.rs/syn/1.0/syn/visit/index.html
+//!   [`visit_mut`]: https://docs.rs/syn/1.0/syn/visit_mut/index.html
+//!   [`fold`]: https://docs.rs/syn/1.0/syn/fold/index.html
 //!
 //! To make this type of code as easy as possible to implement in any language,
 //! every Syn release comes with a machine-readable description of that version
@@ -44,12 +44,11 @@
 //! }
 //! ```
 
-#![doc(html_root_url = "https://docs.rs/syn-codegen/0.4.1")]
+#![doc(html_root_url = "https://docs.rs/syn-codegen/0.2.0")]
 
 use indexmap::IndexMap;
 use semver::Version;
-use serde::de::{Deserialize, Deserializer};
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Top-level content of the syntax tree description.
@@ -97,7 +96,7 @@ pub struct Node {
 /// Content of a syntax tree data structure.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Data {
-    /// This is an opaque type with no publicly accessible structure.
+    /// This is an opaque type with no publicy accessible structure.
     Private,
 
     /// This type is a braced struct with named fields.
