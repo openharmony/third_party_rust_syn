@@ -4,13 +4,14 @@ use proc_macro2::{Ident, Span, TokenStream};
 use quote::{format_ident, quote};
 use syn_codegen::{Data, Definitions, Node, Type};
 
-const DEBUG_SRC: &str = "../src/gen/clone.rs";
+const CLONE_SRC: &str = "src/gen/clone.rs";
 
 fn expand_impl_body(defs: &Definitions, node: &Node) -> TokenStream {
     let type_name = &node.ident;
     let ident = Ident::new(type_name, Span::call_site());
 
     match &node.data {
+        Data::Enum(variants) if variants.is_empty() => quote!(match *self {}),
         Data::Enum(variants) => {
             let arms = variants.iter().map(|(variant_name, fields)| {
                 let variant = Ident::new(variant_name, Span::call_site());
@@ -40,18 +41,13 @@ fn expand_impl_body(defs: &Definitions, node: &Node) -> TokenStream {
                     }
                 }
             });
-            let nonexhaustive = if node.exhaustive {
-                None
-            } else if node.ident == "Expr" {
+            let nonexhaustive = if node.ident == "Expr" {
                 Some(quote! {
-                    #[cfg(any(syn_no_non_exhaustive, not(feature = "full")))]
+                    #[cfg(not(feature = "full"))]
                     _ => unreachable!(),
                 })
             } else {
-                Some(quote! {
-                    #[cfg(syn_no_non_exhaustive)]
-                    _ => unreachable!(),
-                })
+                None
             };
             quote! {
                 match self {
@@ -80,7 +76,7 @@ fn expand_impl(defs: &Definitions, node: &Node) -> TokenStream {
     }
 
     let ident = Ident::new(&node.ident, Span::call_site());
-    let cfg_features = cfg::features(&node.features);
+    let cfg_features = cfg::features(&node.features, "clone-impls");
 
     let copy = node.ident == "AttrStyle"
         || node.ident == "BinOp"
@@ -90,10 +86,8 @@ fn expand_impl(defs: &Definitions, node: &Node) -> TokenStream {
     if copy {
         return quote! {
             #cfg_features
-            #[cfg_attr(doc_cfg, doc(cfg(feature = "clone-impls")))]
             impl Copy for #ident {}
             #cfg_features
-            #[cfg_attr(doc_cfg, doc(cfg(feature = "clone-impls")))]
             impl Clone for #ident {
                 fn clone(&self) -> Self {
                     *self
@@ -106,7 +100,6 @@ fn expand_impl(defs: &Definitions, node: &Node) -> TokenStream {
 
     quote! {
         #cfg_features
-        #[cfg_attr(doc_cfg, doc(cfg(feature = "clone-impls")))]
         impl Clone for #ident {
             fn clone(&self) -> Self {
                 #body
@@ -122,7 +115,7 @@ pub fn generate(defs: &Definitions) -> Result<()> {
     }
 
     file::write(
-        DEBUG_SRC,
+        CLONE_SRC,
         quote! {
             #![allow(clippy::clone_on_copy, clippy::expl_impl_clone_on_copy)]
 
