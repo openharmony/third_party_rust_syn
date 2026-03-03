@@ -1,3 +1,4 @@
+use crate::cfg::{self, DocCfg};
 use crate::operand::{Borrowed, Operand, Owned};
 use crate::{file, full, gen};
 use anyhow::Result;
@@ -36,14 +37,20 @@ fn visit(
             visit(t, features, defs, &Owned(quote!(*#name)))
         }
         Type::Vec(t) => {
-            let operand = Borrowed(quote!(it));
-            let val = visit(t, features, defs, &operand)?;
             let name = name.ref_mut_tokens();
-            Some(quote! {
-                for it in #name {
-                    #val;
-                }
-            })
+            if matches!(&**t, Type::Syn(t) if t == "Attribute") {
+                Some(quote! {
+                    v.visit_attributes_mut(#name);
+                })
+            } else {
+                let operand = Borrowed(quote!(it));
+                let val = visit(t, features, defs, &operand)?;
+                Some(quote! {
+                    for it in #name {
+                        #val;
+                    }
+                })
+            }
         }
         Type::Punctuated(p) => {
             let operand = Borrowed(quote!(it));
@@ -96,7 +103,12 @@ fn visit(
 
 fn node(traits: &mut TokenStream, impls: &mut TokenStream, s: &Node, defs: &Definitions) {
     let under_name = gen::under_name(&s.ident);
-    let ty = Ident::new(&s.ident, Span::call_site());
+    let ident = Ident::new(&s.ident, Span::call_site());
+    let ty = if gen::TERMINAL_TYPES.contains(&s.ident.as_str()) {
+        quote!(proc_macro2::#ident)
+    } else {
+        quote!(crate::#ident)
+    };
     let visit_mut_fn = format_ident!("visit_{}_mut", under_name);
 
     let mut visit_mut_impl = TokenStream::new();
@@ -164,7 +176,7 @@ fn node(traits: &mut TokenStream, impls: &mut TokenStream, s: &Node, defs: &Defi
             }
         }
         Data::Private => {
-            if ty == "Ident" {
+            if s.ident == "Ident" {
                 visit_mut_impl.extend(quote! {
                     let mut span = node.span();
                     v.visit_span_mut(&mut span);
@@ -174,20 +186,42 @@ fn node(traits: &mut TokenStream, impls: &mut TokenStream, s: &Node, defs: &Defi
         }
     }
 
+    let traits_body = if s.ident == "Span" || s.ident == "TokenStream" {
+        None
+    } else {
+        Some(quote! {
+            #visit_mut_fn(self, i);
+        })
+    };
+
     traits.extend(quote! {
         fn #visit_mut_fn(&mut self, i: &mut #ty) {
-            #visit_mut_fn(self, i);
+            #traits_body
         }
     });
 
-    impls.extend(quote! {
-        pub fn #visit_mut_fn<V>(v: &mut V, node: &mut #ty)
-        where
-            V: VisitMut + ?Sized,
-        {
-            #visit_mut_impl
-        }
-    });
+    if s.ident != "TokenStream" {
+        impls.extend(quote! {
+            pub fn #visit_mut_fn<V>(v: &mut V, node: &mut #ty)
+            where
+                V: VisitMut + ?Sized,
+            {
+                #visit_mut_impl
+            }
+        });
+    }
+
+    if s.ident == "Attribute" {
+        let features = cfg::features(&s.features, DocCfg::Ordinary);
+        traits.extend(quote! {
+            #features
+            fn visit_attributes_mut(&mut self, i: &mut Vec<crate::Attribute>) {
+                for attr in i {
+                    self.visit_attribute_mut(attr);
+                }
+            }
+        });
+    }
 }
 
 pub fn generate(defs: &Definitions) -> Result<()> {
@@ -201,8 +235,8 @@ pub fn generate(defs: &Definitions) -> Result<()> {
 
             #[cfg(any(feature = "full", feature = "derive"))]
             use crate::punctuated::Punctuated;
-            use crate::*;
-            use proc_macro2::Span;
+            #[cfg(any(feature = "derive", feature = "full"))]
+            use alloc::vec::Vec;
 
             #full_macro
 

@@ -51,8 +51,10 @@ pub(crate) fn xid_ok(symbol: &str) -> bool {
 #[cfg(feature = "parsing")]
 mod parsing {
     use crate::buffer::Cursor;
-    use crate::parse::{Parse, ParseStream, Result};
+    use crate::error::Result;
+    use crate::parse::{Parse, ParseStream};
     use crate::token::Token;
+    use alloc::string::ToString;
     use proc_macro2::Ident;
 
     fn accept_as_ident(ident: &Ident) -> bool {
@@ -71,7 +73,7 @@ mod parsing {
         }
     }
 
-    #[cfg_attr(doc_cfg, doc(cfg(feature = "parsing")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "parsing")))]
     impl Parse for Ident {
         fn parse(input: ParseStream) -> Result<Self> {
             input.step(|cursor| {

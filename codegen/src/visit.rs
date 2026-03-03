@@ -96,7 +96,12 @@ fn visit(
 
 fn node(traits: &mut TokenStream, impls: &mut TokenStream, s: &Node, defs: &Definitions) {
     let under_name = gen::under_name(&s.ident);
-    let ty = Ident::new(&s.ident, Span::call_site());
+    let ident = Ident::new(&s.ident, Span::call_site());
+    let ty = if gen::TERMINAL_TYPES.contains(&s.ident.as_str()) {
+        quote!(proc_macro2::#ident)
+    } else {
+        quote!(crate::#ident)
+    };
     let visit_fn = format_ident!("visit_{}", under_name);
 
     let mut visit_impl = TokenStream::new();
@@ -164,7 +169,7 @@ fn node(traits: &mut TokenStream, impls: &mut TokenStream, s: &Node, defs: &Defi
             }
         }
         Data::Private => {
-            if ty == "Ident" {
+            if s.ident == "Ident" {
                 visit_impl.extend(quote! {
                     v.visit_span(&node.span());
                 });
@@ -178,20 +183,30 @@ fn node(traits: &mut TokenStream, impls: &mut TokenStream, s: &Node, defs: &Defi
         Some(quote!('ast))
     };
 
+    let traits_body = if s.ident == "Span" || s.ident == "TokenStream" {
+        None
+    } else {
+        Some(quote! {
+            #visit_fn(self, i);
+        })
+    };
+
     traits.extend(quote! {
         fn #visit_fn(&mut self, i: &#ast_lifetime #ty) {
-            #visit_fn(self, i);
+            #traits_body
         }
     });
 
-    impls.extend(quote! {
-        pub fn #visit_fn<'ast, V>(v: &mut V, node: &#ast_lifetime #ty)
-        where
-            V: Visit<'ast> + ?Sized,
-        {
-            #visit_impl
-        }
-    });
+    if s.ident != "TokenStream" {
+        impls.extend(quote! {
+            pub fn #visit_fn<'ast, V>(v: &mut V, node: &#ast_lifetime #ty)
+            where
+                V: Visit<'ast> + ?Sized,
+            {
+                #visit_impl
+            }
+        });
+    }
 }
 
 pub fn generate(defs: &Definitions) -> Result<()> {
@@ -205,8 +220,6 @@ pub fn generate(defs: &Definitions) -> Result<()> {
 
             #[cfg(any(feature = "full", feature = "derive"))]
             use crate::punctuated::Punctuated;
-            use crate::*;
-            use proc_macro2::Span;
 
             #full_macro
 

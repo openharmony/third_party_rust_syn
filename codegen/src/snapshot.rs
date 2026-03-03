@@ -275,7 +275,7 @@ fn expand_impl_body(defs: &Definitions, node: &Node, name: &str, val: &Operand) 
                         for node in &defs.types {
                             if node.ident == *inner {
                                 if let Data::Enum(variants) = &node.data {
-                                    if variants.get("None").map_or(false, Vec::is_empty) {
+                                    if variants.get("None").is_some_and(Vec::is_empty) {
                                         let ty = rust_type(ty);
                                         call = quote! {
                                             match #val.#ident {
@@ -356,14 +356,14 @@ pub fn generate(defs: &Definitions) -> Result<()> {
     file::write(
         TESTS_DEBUG_SRC,
         quote! {
-            // False positive: https://github.com/rust-lang/rust/issues/78586#issuecomment-1722680482
-            #![allow(repr_transparent_external_private_fields)]
+            // False positive: https://github.com/rust-lang/rust/issues/115922
+            #![allow(repr_transparent_non_zst_fields)]
 
             #![allow(clippy::match_wildcard_for_single_variants)]
 
             use super::{Lite, Present};
+            use core::fmt::{self, Debug, Display};
             use ref_cast::RefCast;
-            use std::fmt::{self, Debug, Display};
 
             #impls
         },

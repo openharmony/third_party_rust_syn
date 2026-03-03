@@ -1,5 +1,5 @@
 {
-  "version": "2.0.48",
+  "version": "2.0.114",
   "types": [
     {
       "ident": "Abi",
@@ -451,6 +451,27 @@
       }
     },
     {
+      "ident": "CapturedParam",
+      "features": {
+        "any": [
+          "full"
+        ]
+      },
+      "variants": {
+        "Lifetime": [
+          {
+            "syn": "Lifetime"
+          }
+        ],
+        "Ident": [
+          {
+            "proc_macro2": "Ident"
+          }
+        ]
+      },
+      "exhaustive": false
+    },
+    {
       "ident": "ConstParam",
       "features": {
         "any": [
@@ -773,6 +794,11 @@
         "Range": [
           {
             "syn": "ExprRange"
+          }
+        ],
+        "RawAddr": [
+          {
+            "syn": "ExprRawAddr"
           }
         ],
         "Reference": [
@@ -1620,6 +1646,35 @@
       }
     },
     {
+      "ident": "ExprRawAddr",
+      "features": {
+        "any": [
+          "full"
+        ]
+      },
+      "fields": {
+        "attrs": {
+          "vec": {
+            "syn": "Attribute"
+          }
+        },
+        "and_token": {
+          "token": "And"
+        },
+        "raw": {
+          "token": "Raw"
+        },
+        "mutability": {
+          "syn": "PointerMutability"
+        },
+        "expr": {
+          "box": {
+            "syn": "Expr"
+          }
+        }
+      }
+    },
+    {
       "ident": "ExprReference",
       "features": {
         "any": [
@@ -1799,6 +1854,7 @@
       "ident": "ExprTuple",
       "features": {
         "any": [
+          "derive",
           "full"
         ]
       },
@@ -3366,6 +3422,11 @@
             "syn": "LitByteStr"
           }
         ],
+        "CStr": [
+          {
+            "syn": "LitCStr"
+          }
+        ],
         "Byte": [
           {
             "syn": "LitByte"
@@ -3421,6 +3482,12 @@
     },
     {
       "ident": "LitByteStr",
+      "features": {
+        "any": []
+      }
+    },
+    {
+      "ident": "LitCStr",
       "features": {
         "any": []
       }
@@ -4137,6 +4204,53 @@
         },
         "arguments": {
           "syn": "PathArguments"
+        }
+      }
+    },
+    {
+      "ident": "PointerMutability",
+      "features": {
+        "any": [
+          "full"
+        ]
+      },
+      "variants": {
+        "Const": [
+          {
+            "token": "Const"
+          }
+        ],
+        "Mut": [
+          {
+            "token": "Mut"
+          }
+        ]
+      }
+    },
+    {
+      "ident": "PreciseCapture",
+      "features": {
+        "any": [
+          "full"
+        ]
+      },
+      "fields": {
+        "use_token": {
+          "token": "Use"
+        },
+        "lt_token": {
+          "token": "Lt"
+        },
+        "params": {
+          "punctuated": {
+            "element": {
+              "syn": "CapturedParam"
+            },
+            "punct": "Comma"
+          }
+        },
+        "gt_token": {
+          "token": "Gt"
         }
       }
     },
@@ -4979,6 +5093,11 @@
             "syn": "Lifetime"
           }
         ],
+        "PreciseCapture": [
+          {
+            "syn": "PreciseCapture"
+          }
+        ],
         "Verbatim": [
           {
             "proc_macro2": "TokenStream"
@@ -5532,6 +5651,7 @@
     "Pub": "pub",
     "Question": "?",
     "RArrow": "->",
+    "Raw": "raw",
     "Ref": "ref",
     "Return": "return",
     "SelfType": "Self",

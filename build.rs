@@ -1,15 +1,21 @@
+#![allow(clippy::uninlined_format_args)]
+
 use std::env;
 use std::ffi::OsString;
+use std::iter;
 use std::process::{self, Command, Stdio};
 
-// The rustc-cfg strings below are *not* public API. Please let us know by
-// opening a GitHub issue if your build environment requires some way to enable
-// these cfgs other than by executing our build script.
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
 
     // Note: add "/build.rs" to package.include in Cargo.toml if adding any
     // conditional compilation within the library.
+
+    println!("cargo:rustc-cfg=check_cfg");
+    println!("cargo:rustc-check-cfg=cfg(check_cfg)");
+    println!("cargo:rustc-check-cfg=cfg(fuzzing)");
+    println!("cargo:rustc-check-cfg=cfg(syn_disable_nightly_tests)");
+    println!("cargo:rustc-check-cfg=cfg(syn_only)");
 
     if !unstable() {
         println!("cargo:rustc-cfg=syn_disable_nightly_tests");
@@ -18,16 +24,15 @@ fn main() {
 
 fn unstable() -> bool {
     let rustc = cargo_env_var("RUSTC");
-
-    // Pick up Cargo rustc configuration.
-    let mut cmd = if let Some(wrapper) = env::var_os("RUSTC_WRAPPER") {
-        let mut cmd = Command::new(wrapper);
-        // The wrapper's first argument is supposed to be the path to rustc.
-        cmd.arg(rustc);
-        cmd
-    } else {
-        Command::new(rustc)
-    };
+    let rustc_wrapper = env::var_os("RUSTC_WRAPPER").filter(|wrapper| !wrapper.is_empty());
+    let rustc_workspace_wrapper =
+        env::var_os("RUSTC_WORKSPACE_WRAPPER").filter(|wrapper| !wrapper.is_empty());
+    let mut rustc = rustc_wrapper
+        .into_iter()
+        .chain(rustc_workspace_wrapper)
+        .chain(iter::once(rustc));
+    let mut cmd = Command::new(rustc.next().unwrap());
+    cmd.args(rustc);
 
     cmd.stdin(Stdio::null());
     cmd.stdout(Stdio::null());

@@ -3,6 +3,7 @@ use anyhow::{bail, Result};
 use indexmap::IndexMap;
 use quote::quote;
 use std::collections::BTreeMap;
+use std::fmt::{self, Display};
 use std::fs;
 use std::path::{Path, PathBuf};
 use syn::parse::{Error, Parser};
@@ -11,7 +12,6 @@ use syn::{
     Ident, Item, PathArguments, TypeMacro, TypePath, TypeTuple, UseTree, Visibility,
 };
 use syn_codegen as types;
-use thiserror::Error;
 
 const SYN_CRATE_ROOT: &str = "src/lib.rs";
 const TOKEN_SRC: &str = "src/token.rs";
@@ -86,9 +86,9 @@ fn introspect_item(item: &AstItem, lookup: &Lookup) -> types::Node {
                     types::Data::Private
                 }
             },
-            exhaustive: true,
+            exhaustive: !is_non_exhaustive(&item.ast.attrs),
         },
-        Data::Union(..) => panic!("Union not supported"),
+        Data::Union(..) => panic!("union not supported"),
     }
 }
 
@@ -106,7 +106,7 @@ fn introspect_enum(item: &DataEnum, lookup: &Lookup) -> types::Variants {
                     .map(|field| introspect_type(&field.ty, lookup))
                     .collect(),
                 Fields::Unit => vec![],
-                Fields::Named(_) => panic!("Enum representation not supported"),
+                Fields::Named(_) => panic!("enum representation not supported"),
             };
             Some((variant.ident.to_string(), fields))
         })
@@ -126,7 +126,7 @@ fn introspect_struct(item: &DataStruct, lookup: &Lookup) -> types::Fields {
             })
             .collect(),
         Fields::Unit => IndexMap::new(),
-        Fields::Unnamed(_) => panic!("Struct representation not supported"),
+        Fields::Unnamed(_) => panic!("struct representation not supported"),
     }
 }
 
@@ -169,7 +169,7 @@ fn introspect_type(item: &syn::Type, lookup: &Lookup) -> types::Type {
                     while let Some(alias) = lookup.aliases.get(resolved) {
                         resolved = alias;
                     }
-                    if lookup.items.get(resolved).is_some() {
+                    if lookup.items.contains_key(resolved) {
                         types::Type::Syn(resolved.to_string())
                     } else {
                         unimplemented!("{}", resolved);
@@ -185,7 +185,7 @@ fn introspect_type(item: &syn::Type, lookup: &Lookup) -> types::Type {
             if mac.path.segments.last().unwrap().ident == "Token" =>
         {
             let content = mac.tokens.to_string();
-            let ty = lookup.tokens.get(&content).unwrap().to_string();
+            let ty = lookup.tokens.get(&content).unwrap().clone();
 
             types::Type::Token(ty)
         }
@@ -244,32 +244,32 @@ fn is_doc_hidden(attrs: &[Attribute]) -> bool {
 fn first_arg(params: &PathArguments) -> &syn::Type {
     let data = match params {
         PathArguments::AngleBracketed(data) => data,
-        _ => panic!("Expected at least 1 type argument here"),
+        _ => panic!("expected at least 1 type argument here"),
     };
 
     match data
         .args
         .first()
-        .expect("Expected at least 1 type argument here")
+        .expect("expected at least 1 type argument here")
     {
         GenericArgument::Type(ty) => ty,
-        _ => panic!("Expected at least 1 type argument here"),
+        _ => panic!("expected at least 1 type argument here"),
     }
 }
 
 fn last_arg(params: &PathArguments) -> &syn::Type {
     let data = match params {
         PathArguments::AngleBracketed(data) => data,
-        _ => panic!("Expected at least 1 type argument here"),
+        _ => panic!("expected at least 1 type argument here"),
     };
 
     match data
         .args
         .last()
-        .expect("Expected at least 1 type argument here")
+        .expect("expected at least 1 type argument here")
     {
         GenericArgument::Type(ty) => ty,
-        _ => panic!("Expected at least 1 type argument here"),
+        _ => panic!("expected at least 1 type argument here"),
     }
 }
 
@@ -306,25 +306,20 @@ mod parsing {
         }
     }
 
-    // Parses a simple AstStruct without the `pub struct` prefix.
-    fn ast_struct_inner(input: ParseStream) -> Result<AstItem> {
+    pub fn ast_struct(input: ParseStream) -> Result<AstItem> {
+        let attrs = input.call(Attribute::parse_outer)?;
+        input.parse::<Token![pub]>()?;
+        input.parse::<Token![struct]>()?;
         let ident: Ident = input.parse()?;
         let features = full(input);
         let rest: TokenStream = input.parse()?;
         Ok(AstItem {
             ast: syn::parse2(quote! {
+                #(#attrs)*
                 pub struct #ident #rest
             })?,
             features,
         })
-    }
-
-    pub fn ast_struct(input: ParseStream) -> Result<AstItem> {
-        input.call(Attribute::parse_outer)?;
-        input.parse::<Token![pub]>()?;
-        input.parse::<Token![struct]>()?;
-        let res = input.call(ast_struct_inner)?;
-        Ok(res)
     }
 
     pub fn ast_enum(input: ParseStream) -> Result<AstItem> {
@@ -422,7 +417,7 @@ mod parsing {
             expansion.parse::<Token![$]>()?;
             let path: Path = expansion.parse()?;
             let ty = path.segments.last().unwrap().ident.to_string();
-            tokens.insert(token, ty.to_string());
+            tokens.insert(token, ty.clone());
         }
         Ok(tokens)
     }
@@ -495,13 +490,27 @@ fn get_features(attrs: &[Attribute], base: &[Attribute]) -> Vec<Attribute> {
     ret
 }
 
-#[derive(Error, Debug)]
-#[error("{path}:{line}:{column}: {error}")]
+#[derive(Debug)]
 struct LoadFileError {
     path: PathBuf,
     line: usize,
     column: usize,
     error: Error,
+}
+
+impl std::error::Error for LoadFileError {}
+
+impl Display for LoadFileError {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            formatter,
+            "{path}:{line}:{column}: {error}",
+            path = self.path.display(),
+            line = self.line,
+            column = self.column,
+            error = self.error,
+        )
+    }
 }
 
 fn load_file(
@@ -581,13 +590,13 @@ fn do_load_file(
                 let features = get_features(&item.attrs, features);
 
                 // Try to parse the AstItem declaration out of the item.
-                let tts = item.mac.tokens.clone();
+                let tokens = item.mac.tokens.clone();
                 let mut found = if item.mac.path.is_ident("ast_struct") {
-                    parsing::ast_struct.parse2(tts)
+                    parsing::ast_struct.parse2(tokens)
                 } else if item.mac.path.is_ident("ast_enum") {
-                    parsing::ast_enum.parse2(tts)
+                    parsing::ast_enum.parse2(tokens)
                 } else if item.mac.path.is_ident("ast_enum_of_structs") {
-                    parsing::ast_enum_of_structs.parse2(tts)
+                    parsing::ast_enum_of_structs.parse2(tokens)
                 } else {
                     continue;
                 }?;
@@ -619,7 +628,7 @@ fn do_load_file(
                 }
             }
             Item::Use(item)
-                if relative_to_workspace_root == Path::new(SYN_CRATE_ROOT)
+                if relative_to_workspace_root == Path::new("src/pat.rs")
                     && matches!(item.vis, Visibility::Public(_)) =>
             {
                 load_aliases(item.tree, lookup);

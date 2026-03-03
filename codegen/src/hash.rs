@@ -1,4 +1,4 @@
-use crate::{cfg, file, lookup};
+use crate::{cfg, file, full, lookup};
 use anyhow::Result;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::{format_ident, quote};
@@ -23,6 +23,7 @@ fn expand_impl_body(defs: &Definitions, node: &Node) -> TokenStream {
     match &node.data {
         Data::Enum(variants) if variants.is_empty() => quote!(match *self {}),
         Data::Enum(variants) => {
+            let mixed_derive_full = full::is_mixed_derive_full_enum(defs, node);
             let arms = variants
                 .iter()
                 .enumerate()
@@ -31,7 +32,7 @@ fn expand_impl_body(defs: &Definitions, node: &Node) -> TokenStream {
                     let variant = Ident::new(variant_name, Span::call_site());
                     if fields.is_empty() {
                         quote! {
-                            #ident::#variant => {
+                            crate::#ident::#variant => {
                                 state.write_u8(#i);
                             }
                         }
@@ -60,23 +61,25 @@ fn expand_impl_body(defs: &Definitions, node: &Node) -> TokenStream {
                             pats.push(var);
                         }
                         let mut cfg = None;
-                        if node.ident == "Expr" {
+                        if mixed_derive_full {
                             if let Type::Syn(ty) = &fields[0] {
-                                if !lookup::node(defs, ty).features.any.contains("derive") {
+                                let features = &lookup::node(defs, ty).features;
+                                if features.any.contains("full") && !features.any.contains("derive")
+                                {
                                     cfg = Some(quote!(#[cfg(feature = "full")]));
                                 }
                             }
                         }
                         quote! {
                             #cfg
-                            #ident::#variant(#(#pats),*) => {
+                            crate::#ident::#variant(#(#pats),*) => {
                                 state.write_u8(#i);
                                 #(#hashes)*
                             }
                         }
                     }
                 });
-            let nonexhaustive = if node.ident == "Expr" {
+            let nonexhaustive = if mixed_derive_full {
                 Some(quote! {
                     #[cfg(not(feature = "full"))]
                     _ => unreachable!(),
@@ -135,7 +138,7 @@ fn expand_impl(defs: &Definitions, node: &Node) -> TokenStream {
 
     quote! {
         #cfg_features
-        impl Hash for #ident {
+        impl Hash for crate::#ident {
             fn hash<H>(&self, #hasher: &mut H)
             where
                 H: Hasher,
@@ -157,8 +160,9 @@ pub fn generate(defs: &Definitions) -> Result<()> {
         quote! {
             #[cfg(any(feature = "derive", feature = "full"))]
             use crate::tt::TokenStreamHelper;
-            use crate::*;
-            use std::hash::{Hash, Hasher};
+            #[cfg(feature = "extra-traits")]
+            use alloc::string::ToString;
+            use core::hash::{Hash, Hasher};
 
             #impls
         },
