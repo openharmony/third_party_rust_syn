@@ -1,8 +1,8 @@
 [
   {
     "Name": "syn",
-    "License": "Apache License V2.0, MIT",
-    "License File": "LICENSE-APACHE, LICENSE-MIT",
+    "License": "Apache-2.0",
+    "License File": "LICENSE-APACHE",
     "Version Number": "2.0.114",
     "Owner": "fangting12@huawei.com",
     "Upstream URL": "https://github.com/dtolnay/syn",
